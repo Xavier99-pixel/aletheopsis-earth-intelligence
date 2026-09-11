@@ -1,6 +1,7 @@
 services:
   - type: web
     name: aletheopsis-earth-intelligence-api
+    autoDeployTrigger: commit
     runtime: python
     rootDir: backend
     buildCommand: pip install -r requirements.txt
@@ -22,6 +23,7 @@ services:
 
   - type: web
     name: aletheopsis-earth-intelligence
+    autoDeployTrigger: commit
     runtime: static
     buildCommand: npm ci && npm run build
     staticPublishPath: ./dist
