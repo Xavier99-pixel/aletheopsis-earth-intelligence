@@ -28,6 +28,42 @@ const supabase = authConfigured
   : null;
 
 const roleStorageKey = "aletheopsis.selected-role";
+const oauthIntentStorageKey = "aletheopsis.oauth-intent";
+const authenticatedWindowStorageKey = "aletheopsis.authenticated-window";
+const oauthIntentLifetimeMs = 10 * 60 * 1000;
+
+function hasAuthCallbackInUrl() {
+  const query = new URLSearchParams(window.location.search);
+  const fragment = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  return ["code", "access_token", "refresh_token", "error", "error_code"].some(
+    (key) => query.has(key) || fragment.has(key),
+  );
+}
+
+// Capture this before Supabase consumes a code or access-token fragment.
+const arrivedFromAuthCallback = hasAuthCallbackInUrl();
+
+function recordOAuthIntent() {
+  window.sessionStorage.setItem(oauthIntentStorageKey, String(Date.now()));
+}
+
+function hasRecentOAuthIntent() {
+  const timestamp = Number(window.sessionStorage.getItem(oauthIntentStorageKey));
+  return Number.isFinite(timestamp) && Date.now() - timestamp >= 0 && Date.now() - timestamp < oauthIntentLifetimeMs;
+}
+
+function shouldRestoreAuthAfterLogin() {
+  return arrivedFromAuthCallback || hasRecentOAuthIntent() || window.sessionStorage.getItem(authenticatedWindowStorageKey) === "true";
+}
+
+function clearOAuthIntent() {
+  window.sessionStorage.removeItem(oauthIntentStorageKey);
+}
+
+export function finishAuthentication() {
+  clearOAuthIntent();
+  window.sessionStorage.setItem(authenticatedWindowStorageKey, "true");
+}
 
 function savedRole(): Role {
   const saved = window.localStorage.getItem(roleStorageKey);
@@ -47,7 +83,10 @@ function saveRole(role: Role) {
 }
 
 export async function getAuthenticatedIdentity(): Promise<Identity | null> {
-  if (!supabase) return null;
+  // A browser can retain a historical Supabase session. Do not let that session
+  // bypass the sign-in screen: only restore identity after this browser returns
+  // from an explicit Google/email authentication flow.
+  if (!supabase || !shouldRestoreAuthAfterLogin()) return null;
   const { data, error } = await supabase.auth.getUser();
   if (error || !data.user) return null;
   return identityFromUser(data.user);
@@ -55,8 +94,12 @@ export async function getAuthenticatedIdentity(): Promise<Identity | null> {
 
 export function onAuthIdentityChange(onChange: (identity: Identity | null) => void) {
   if (!supabase) return () => undefined;
-  const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-    onChange(session?.user ? identityFromUser(session.user) : null);
+  const { data } = supabase.auth.onAuthStateChange((event, session) => {
+    if (session?.user && shouldRestoreAuthAfterLogin()) {
+      onChange(identityFromUser(session.user));
+    } else if (event === "SIGNED_OUT") {
+      onChange(null);
+    }
   });
   return () => data.subscription.unsubscribe();
 }
@@ -64,11 +107,15 @@ export function onAuthIdentityChange(onChange: (identity: Identity | null) => vo
 export async function signInWithGoogle(role: Role) {
   if (!supabase) return { mode: "local" as const };
   saveRole(role);
+  recordOAuthIntent();
   const { error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: { redirectTo: window.location.origin },
   });
-  if (error) throw error;
+  if (error) {
+    clearOAuthIntent();
+    throw error;
+  }
   return { mode: "authenticated" as const };
 }
 

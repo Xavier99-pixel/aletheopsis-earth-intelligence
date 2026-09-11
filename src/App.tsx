@@ -4,7 +4,7 @@ import { buildCatalogAssessment } from "./lib/assessment";
 import { buildInvestigationBrief, type InvestigationBrief } from "./lib/investigationEngine";
 import type { AreaOfInterest, CatalogAssessment, Identity, InvestigationRequest } from "./lib/types";
 import { searchLiveCatalogue } from "./services/catalog";
-import { getAuthenticatedIdentity, onAuthIdentityChange } from "./services/auth";
+import { finishAuthentication, getAuthenticatedIdentity, onAuthIdentityChange } from "./services/auth";
 import { loadRainfallOutlook, type RainfallOutlook } from "./services/weather";
 import { AccessGate } from "./components/AccessGate";
 import { AnalysisPanel } from "./components/AnalysisPanel";
@@ -31,10 +31,16 @@ export default function App() {
   useEffect(() => {
     let active = true;
     void getAuthenticatedIdentity().then((authenticatedIdentity) => {
-      if (active && authenticatedIdentity) setIdentity(authenticatedIdentity);
+      if (active && authenticatedIdentity) {
+        setIdentity(authenticatedIdentity);
+        finishAuthentication();
+      }
     });
     const unsubscribe = onAuthIdentityChange((authenticatedIdentity) => {
-      if (active && authenticatedIdentity) setIdentity(authenticatedIdentity);
+      if (active && authenticatedIdentity) {
+        setIdentity(authenticatedIdentity);
+        finishAuthentication();
+      }
     });
     return () => {
       active = false;
