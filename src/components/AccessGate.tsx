@@ -1,0 +1,112 @@
+import { useState, type FormEvent } from "react";
+import { ArrowUpRight, Chrome, LoaderCircle, Mail, ShieldCheck } from "lucide-react";
+import { authConfigured, sendMagicLink, signInWithGoogle } from "../services/auth";
+import type { Identity, Role } from "../lib/types";
+import { ROLES } from "../lib/types";
+import { BrandMark } from "./BrandMark";
+import { CesiumGlobe } from "./CesiumGlobe";
+
+type AccessGateProps = {
+  onAuthenticated: (identity: Identity) => void;
+};
+
+export function AccessGate({ onAuthenticated }: AccessGateProps) {
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<Role>("Researcher");
+  const [busy, setBusy] = useState<"google" | "email" | null>(null);
+  const [message, setMessage] = useState("");
+
+  async function enterWithGoogle() {
+    setBusy("google");
+    setMessage("");
+    try {
+      const response = await signInWithGoogle(role);
+      if (response.mode === "local") {
+        onAuthenticated({ email: "local@aletheopsis", role, mode: "local" });
+      }
+    } catch {
+      setMessage("Google sign-in could not start. Check the Supabase OAuth configuration.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function enterWithEmail(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail || !normalizedEmail.includes("@")) {
+      setMessage("Enter a valid work or research email address.");
+      return;
+    }
+    setBusy("email");
+    setMessage("");
+    try {
+      const response = await sendMagicLink(normalizedEmail, role);
+      if (response.mode === "local") {
+        onAuthenticated({ email: normalizedEmail, role, mode: "local" });
+      } else {
+        setMessage("Magic link sent. Check your inbox, then return here.");
+      }
+    } catch {
+      setMessage("Email sign-in could not start. Check the Supabase Auth configuration.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <main className="access-gate">
+      <CesiumGlobe variant="landing" />
+      <div className="access-gate__veil" aria-hidden="true" />
+      <section className="access-card" aria-label="Sign in to Aletheopsis">
+        <div className="access-card__topline">
+          <span className="status-dot" /> Secure workspace
+        </div>
+        <BrandMark />
+        <h2>Sign in</h2>
+        <p>Choose an operating role for data access and audit policy.</p>
+
+        <label className="field-label" htmlFor="role">Operating role</label>
+        <select id="role" className="role-select" value={role} onChange={(event) => setRole(event.target.value as Role)}>
+          {ROLES.map((item) => <option key={item}>{item}</option>)}
+        </select>
+
+        <button type="button" className="google-button" onClick={enterWithGoogle} disabled={busy !== null}>
+          {busy === "google" ? <LoaderCircle className="spin" size={18} /> : <Chrome size={18} />}
+          {authConfigured ? "Continue with Google" : "Open local workspace"}
+          <ArrowUpRight size={16} />
+        </button>
+
+        {authConfigured && <>
+          <div className="divider"><span>or use email</span></div>
+
+          <form onSubmit={enterWithEmail} className="email-form">
+            <label className="field-label" htmlFor="email">Work or research email</label>
+            <div className="email-input">
+              <Mail size={17} />
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="you@organisation.org"
+                autoComplete="email"
+              />
+            </div>
+            <button type="submit" className="primary-button" disabled={busy !== null}>
+              {busy === "email" ? <LoaderCircle className="spin" size={18} /> : <ShieldCheck size={18} />}
+              Send secure link
+            </button>
+          </form>
+        </>}
+
+        {message && <p className="access-message" role="status">{message}</p>}
+        {!authConfigured && (
+          <p className="access-disclosure">
+            Identity provider not connected. Configure Supabase to enable Google and email sign-in.
+          </p>
+        )}
+      </section>
+    </main>
+  );
+}

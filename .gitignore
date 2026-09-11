@@ -1,0 +1,10 @@
+node_modules
+dist
+.env
+.env.local
+backend/.env
+backend/.venv
+backend/**/__pycache__
+__pycache__
+*.tsbuildinfo
+.DS_Store
