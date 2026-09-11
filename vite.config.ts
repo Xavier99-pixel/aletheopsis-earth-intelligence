@@ -22,5 +22,11 @@ export default defineConfig({
   },
   server: {
     host: "0.0.0.0"
+  },
+  preview: {
+    host: "0.0.0.0",
+    allowedHosts: [
+      "aletheopsis-earth-intelligence.onrender.com"
+    ]
   }
 });
