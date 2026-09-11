@@ -4,7 +4,22 @@ import { ROLES, type Identity, type Role } from "../lib/types";
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-export const authConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+function hasUsableAuthConfig(url: string | undefined, key: string | undefined) {
+  if (!url || !key) return false;
+  const candidate = `${url} ${key}`.toLowerCase();
+  if (/your[-_ ]|placeholder|example|replace[-_ ]me|<|>/.test(candidate)) return false;
+
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" && key.trim().length > 32;
+  } catch {
+    return false;
+  }
+}
+
+// Avoid presenting a broken Google/email sign-in when deployment variables are
+// still template values. A local demo workspace remains usable in that case.
+export const authConfigured = hasUsableAuthConfig(supabaseUrl, supabaseAnonKey);
 
 const supabase = authConfigured
   ? createClient(supabaseUrl, supabaseAnonKey, {

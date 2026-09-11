@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { ArrowUpRight, Chrome, LoaderCircle, Mail, ShieldCheck } from "lucide-react";
+import { ArrowRight, Chrome, LoaderCircle, Mail, ShieldCheck } from "lucide-react";
 import { authConfigured, sendMagicLink, signInWithGoogle } from "../services/auth";
 import type { Identity, Role } from "../lib/types";
 import { ROLES } from "../lib/types";
@@ -59,12 +59,14 @@ export function AccessGate({ onAuthenticated }: AccessGateProps) {
       <CesiumGlobe variant="landing" />
       <div className="access-gate__veil" aria-hidden="true" />
       <section className="access-card" aria-label="Sign in to Aletheopsis">
-        <div className="access-card__topline">
-          <span className="status-dot" /> Secure workspace
+        <div className="access-card__topline" aria-label="Secure workspace">
+          <span className="status-dot" aria-hidden="true" />
+          <span>Secure workspace</span>
+          <span className="access-card__mode">{authConfigured ? "Identity ready" : "Demo mode"}</span>
         </div>
         <BrandMark />
-        <h2>Sign in</h2>
-        <p>Choose an operating role for data access and audit policy.</p>
+        <h1>Enter the workspace</h1>
+        <p className="access-card__intro">Choose an access profile. Every investigation keeps its source and decision trail attached.</p>
 
         <label className="field-label" htmlFor="role">Operating role</label>
         <select id="role" className="role-select" value={role} onChange={(event) => setRole(event.target.value as Role)}>
@@ -72,9 +74,9 @@ export function AccessGate({ onAuthenticated }: AccessGateProps) {
         </select>
 
         <button type="button" className="google-button" onClick={enterWithGoogle} disabled={busy !== null}>
-          {busy === "google" ? <LoaderCircle className="spin" size={18} /> : <Chrome size={18} />}
-          {authConfigured ? "Continue with Google" : "Open local workspace"}
-          <ArrowUpRight size={16} />
+          {busy === "google" ? <LoaderCircle className="spin" size={18} /> : authConfigured ? <Chrome size={18} /> : <ShieldCheck size={18} />}
+          {authConfigured ? "Continue with Google" : "Open demonstration workspace"}
+          <ArrowRight size={17} />
         </button>
 
         {authConfigured && <>
@@ -103,7 +105,7 @@ export function AccessGate({ onAuthenticated }: AccessGateProps) {
         {message && <p className="access-message" role="status">{message}</p>}
         {!authConfigured && (
           <p className="access-disclosure">
-            Identity provider not connected. Configure Supabase to enable Google and email sign-in.
+            Authentication is not configured in this deployment. You can still explore the public demonstration workspace.
           </p>
         )}
       </section>
