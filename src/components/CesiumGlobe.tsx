@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  CameraEventType,
   Cartesian2,
   Cartesian3,
   Cartographic,
@@ -18,7 +19,7 @@ import {
   Viewer,
   createGooglePhotorealistic3DTileset,
 } from "cesium";
-import { Crosshair, Layers3, Satellite } from "lucide-react";
+import { Crosshair, Home, Layers3, Minus, Plus, Satellite } from "lucide-react";
 import type { AreaOfInterest, CatalogScene } from "../lib/types";
 
 type CesiumGlobeProps = {
@@ -48,6 +49,36 @@ function polygonDegrees(aoi: AreaOfInterest) {
   return [west, south, east, south, east, north, west, north, west, south];
 }
 
+function aoiKey(aoi: AreaOfInterest) {
+  return `${aoi.name}:${aoi.bbox.join(",")}`;
+}
+
+function cameraHeightFor(aoi: AreaOfInterest) {
+  const [west, south, east, north] = aoi.bbox;
+  const widestSide = Math.max(Math.abs(east - west), Math.abs(north - south), 0.03);
+  return Math.min(1_600_000, Math.max(40_000, widestSide * 111_000 * 3.2));
+}
+
+function cameraViewFor(aoi: AreaOfInterest) {
+  const [longitude, latitude] = centreOf(aoi);
+  return {
+    destination: Cartesian3.fromDegrees(longitude, latitude, cameraHeightFor(aoi)),
+    orientation: {
+      heading: CesiumMath.toRadians(14),
+      pitch: CesiumMath.toRadians(-72),
+      roll: 0,
+    },
+  };
+}
+
+function flyToAoi(viewer: Viewer, aoi: AreaOfInterest, duration = 0.85) {
+  viewer.camera.cancelFlight();
+  viewer.camera.flyTo({
+    ...cameraViewFor(aoi),
+    duration,
+  });
+}
+
 function formatAcquisition(scene?: CatalogScene) {
   if (!scene) return "No acquisition selected";
   const date = new Date(scene.datetime);
@@ -69,14 +100,28 @@ export function CesiumGlobe({
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Viewer | null>(null);
   const onAoiChangeRef = useRef(onAoiChange);
+  const aoiRef = useRef(aoi);
+  const selectionModeRef = useRef(false);
+  const lastAoiKeyRef = useRef<string | null>(null);
   const [webglReady, setWebglReady] = useState(true);
   const [viewerReady, setViewerReady] = useState(0);
+  const [selectionMode, setSelectionMode] = useState(false);
   const canUseGoogleTiles = Boolean(googleMapsKey);
   const latestScene = scenes[0];
 
   useEffect(() => {
     onAoiChangeRef.current = onAoiChange;
   }, [onAoiChange]);
+
+  useEffect(() => {
+    aoiRef.current = aoi;
+  }, [aoi]);
+
+  useEffect(() => {
+    selectionModeRef.current = selectionMode;
+    const canvas = viewerRef.current?.scene.canvas;
+    if (canvas) canvas.style.cursor = selectionMode ? "crosshair" : "grab";
+  }, [selectionMode, viewerReady]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -111,20 +156,31 @@ export function CesiumGlobe({
         viewer.scene.fog.enabled = variant === "workspace";
         if (viewer.scene.skyAtmosphere) viewer.scene.skyAtmosphere.show = true;
 
+        const controller = viewer.scene.screenSpaceCameraController;
+        controller.enableCollisionDetection = true;
+        controller.minimumZoomDistance = 500;
+        controller.maximumZoomDistance = 22_000_000;
+        controller.inertiaSpin = 0;
+        controller.inertiaTranslate = 0;
+        controller.inertiaZoom = 0;
+        controller.enableTilt = false;
+        controller.enableLook = false;
+        controller.tiltEventTypes = undefined;
+        controller.lookEventTypes = undefined;
+        controller.rotateEventTypes = CameraEventType.LEFT_DRAG;
+        controller.zoomEventTypes = [CameraEventType.WHEEL, CameraEventType.PINCH];
+        controller.maximumTiltAngle = CesiumMath.toRadians(75);
+        viewer.camera.constrainedAxis = Cartesian3.UNIT_Z;
+
         if (variant === "landing") {
           viewer.camera.setView({ destination: Cartesian3.fromDegrees(78.38, 17.39, 15_000_000) });
         } else {
-          const [longitude, latitude] = centreOf(aoi);
-          viewer.camera.setView({
-            destination: Cartesian3.fromDegrees(longitude, latitude, 300_000),
-            orientation: {
-              heading: CesiumMath.toRadians(24),
-              pitch: CesiumMath.toRadians(-75),
-              roll: 0,
-            },
-          });
+          const initialAoi = aoiRef.current;
+          viewer.camera.setView(cameraViewFor(initialAoi));
+          lastAoiKeyRef.current = aoiKey(initialAoi);
           pointerHandler = new ScreenSpaceEventHandler(viewer.scene.canvas);
           pointerHandler.setInputAction((event: { position: Cartesian2 }) => {
+            if (!selectionModeRef.current) return;
             const cartesian = viewer?.camera.pickEllipsoid(event.position, viewer.scene.globe.ellipsoid);
             if (!cartesian || !viewer) return;
             const coordinate = Cartographic.fromCartesian(cartesian);
@@ -136,6 +192,8 @@ export function CesiumGlobe({
               bbox: [longitude - halfSide, latitude - halfSide, longitude + halfSide, latitude + halfSide],
               source: "map",
             });
+            selectionModeRef.current = false;
+            setSelectionMode(false);
           }, ScreenSpaceEventType.LEFT_CLICK);
         }
 
@@ -160,6 +218,15 @@ export function CesiumGlobe({
       viewerRef.current = null;
     };
   }, [variant, photoRealistic]);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || variant !== "workspace") return;
+    const nextAoiKey = aoiKey(aoi);
+    if (lastAoiKeyRef.current === nextAoiKey) return;
+    lastAoiKeyRef.current = nextAoiKey;
+    flyToAoi(viewer, aoi);
+  }, [aoi, variant, viewerReady]);
 
   useEffect(() => {
     const viewer = viewerRef.current;
@@ -200,6 +267,20 @@ export function CesiumGlobe({
     return <div className="planet-stage" aria-label="Earth view"><div className="planet-stage__canvas" ref={containerRef} /></div>;
   }
 
+  const resetView = () => {
+    const viewer = viewerRef.current;
+    if (viewer) flyToAoi(viewer, aoi, 0.55);
+  };
+
+  const zoom = (direction: "in" | "out") => {
+    const viewer = viewerRef.current;
+    if (!viewer) return;
+    viewer.camera.cancelFlight();
+    const distance = Math.max(1_000, viewer.camera.positionCartographic.height * 0.28);
+    if (direction === "in") viewer.camera.zoomIn(distance);
+    else viewer.camera.zoomOut(distance);
+  };
+
   return (
     <section className="globe-panel" aria-label="Earth observation map">
       <div className="globe-panel__toolbar">
@@ -210,8 +291,23 @@ export function CesiumGlobe({
         </div>
         <div className="globe-panel__actions">
           <span className="map-metadata"><Satellite size={14} /> {formatAcquisition(latestScene)}</span>
-          <button type="button" className="map-action" title="Select an area of interest on the globe">
-            <Crosshair size={15} /> Select on map
+          <button
+            type="button"
+            className={`map-action ${selectionMode ? "is-active" : ""}`}
+            onClick={() => setSelectionMode((active) => !active)}
+            aria-pressed={selectionMode}
+            title="Choose an area on the map"
+          >
+            <Crosshair size={15} /> {selectionMode ? "Click map to set AOI" : "Select on map"}
+          </button>
+          <button type="button" className="map-action" onClick={resetView} title="Return to the selected area" aria-label="Reset map view">
+            <Home size={15} /> Reset view
+          </button>
+          <button type="button" className="map-action" onClick={() => zoom("in")} title="Zoom in" aria-label="Zoom in">
+            <Plus size={15} />
+          </button>
+          <button type="button" className="map-action" onClick={() => zoom("out")} title="Zoom out" aria-label="Zoom out">
+            <Minus size={15} />
           </button>
           <button
             type="button"

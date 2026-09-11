@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { CalendarDays, Check, Crosshair, LoaderCircle, Radar, Search } from "lucide-react";
 import { GIS_TOOLS, SENSORS, type AreaOfInterest, type InvestigationRequest, type SensorId, type ToolId } from "../lib/types";
+import { LocationSearch } from "./LocationSearch";
 
 type QueryComposerProps = {
   aoi: AreaOfInterest;
   onRun: (request: InvestigationRequest) => void;
+  onAoiChange: (aoi: AreaOfInterest) => void;
   running: boolean;
 };
 
@@ -14,8 +16,8 @@ function localDate(daysAgo: number) {
   return date.toISOString().slice(0, 10);
 }
 
-export function QueryComposer({ aoi, onRun, running }: QueryComposerProps) {
-  const [question, setQuestion] = useState("Inspect latest available acquisitions for the selected area.");
+export function QueryComposer({ aoi, onRun, onAoiChange, running }: QueryComposerProps) {
+  const [question, setQuestion] = useState("What is the flood outlook and available SAR evidence for this area?");
   const [sensors, setSensors] = useState<SensorId[]>(["sentinel-2", "sentinel-1"]);
   const [tools, setTools] = useState<ToolId[]>(["change", "measure"]);
   const [startDate, setStartDate] = useState(localDate(90));
@@ -44,7 +46,11 @@ export function QueryComposer({ aoi, onRun, running }: QueryComposerProps) {
     <aside className="investigation-panel" aria-label="Investigation controls">
       <div className="panel-title">
         <span>Investigation</span>
-        <small>Catalogue query</small>
+        <small>Evidence route</small>
+      </div>
+
+      <div className="control-block control-block--location">
+        <LocationSearch onSelect={onAoiChange} disabled={running} />
       </div>
 
       <label className="control-label" htmlFor="investigation-question">Question</label>
@@ -59,7 +65,7 @@ export function QueryComposer({ aoi, onRun, running }: QueryComposerProps) {
       <div className="control-block">
         <span className="control-label"><Crosshair size={14} /> Area of interest</span>
         <strong className="aoi-name">{aoi.name}</strong>
-        <small>{aoi.source === "map" ? "Click the globe to move the boundary" : "Click the globe to set a new boundary"}</small>
+        <small>{aoi.source === "map" ? "Search result or map-selected boundary" : "Search a place or select directly on the globe"}</small>
       </div>
 
       <div className="control-block">
@@ -102,7 +108,7 @@ export function QueryComposer({ aoi, onRun, running }: QueryComposerProps) {
 
       <button type="button" className="run-investigation" onClick={submit} disabled={running}>
         {running ? <LoaderCircle className="spin" size={17} /> : <Search size={17} />}
-        {running ? "Querying catalogue" : "Query catalogue"}
+        {running ? "Building intelligence brief" : "Run intelligence"}
       </button>
     </aside>
   );
