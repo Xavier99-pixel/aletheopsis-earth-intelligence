@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CalendarDays, Check, Crosshair, LoaderCircle, Radar, Search } from "lucide-react";
 import { GIS_TOOLS, SENSORS, type AreaOfInterest, type InvestigationRequest, type SensorId, type ToolId } from "../lib/types";
 import { LocationSearch } from "./LocationSearch";
@@ -8,6 +8,7 @@ type QueryComposerProps = {
   onRun: (request: InvestigationRequest) => void;
   onAoiChange: (aoi: AreaOfInterest) => void;
   running: boolean;
+  suggestedQuestion?: string | null;
 };
 
 function localDate(daysAgo: number) {
@@ -16,12 +17,16 @@ function localDate(daysAgo: number) {
   return date.toISOString().slice(0, 10);
 }
 
-export function QueryComposer({ aoi, onRun, onAoiChange, running }: QueryComposerProps) {
+export function QueryComposer({ aoi, onRun, onAoiChange, running, suggestedQuestion }: QueryComposerProps) {
   const [question, setQuestion] = useState("What is the flood outlook and available SAR evidence for this area?");
   const [sensors, setSensors] = useState<SensorId[]>(["sentinel-2", "sentinel-1"]);
   const [tools, setTools] = useState<ToolId[]>(["change", "measure"]);
   const [startDate, setStartDate] = useState(localDate(90));
   const [endDate, setEndDate] = useState(localDate(0));
+
+  useEffect(() => {
+    if (suggestedQuestion?.trim()) setQuestion(suggestedQuestion);
+  }, [suggestedQuestion]);
 
   function toggleSensor(id: SensorId) {
     setSensors((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);

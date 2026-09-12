@@ -323,11 +323,6 @@ export function CesiumGlobe({
       {webglReady ? <div className="cesium-host" ref={containerRef} /> : (
         <div className="globe-fallback"><strong>3D map unavailable</strong><span>WebGL is required for the Earth view.</span></div>
       )}
-      <div className="globe-panel__legend">
-        <span><i className="legend-dot legend-dot--aoi" /> Selected AOI</span>
-        <span><i className="legend-dot legend-dot--base" /> Context basemap</span>
-        <span className="globe-panel__notice">Analytical evidence is sourced separately from the public catalogue.</span>
-      </div>
     </section>
   );
 }

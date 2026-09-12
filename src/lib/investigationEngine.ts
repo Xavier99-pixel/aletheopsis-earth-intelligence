@@ -96,7 +96,7 @@ const INTENT_RULES: IntentRule[] = [
   { intent: "flood", matches: /\bflood(?:ed|ing)?\b|\binundat(?:e|ed|ion)\b|\bwaterlog(?:ged|ging)?\b|\bstanding water\b|\bwater extent\b/i },
   { intent: "vegetation", matches: /\bvegetation\b|\bndvi\b|\bcrop(?:s| health| stress)?\b|\bforest\b|\bgreenness\b|\bcanopy\b|\bdrought\b|\bagricultur(?:e|al)\b/i },
   { intent: "change", matches: /\bchange\b|\bcompare\b|\bbefore and after\b|\bencroach(?:ment)?\b|\bconstruction\b|\bexpansion\b|\bloss\b|\bgrowth\b|\btemporal\b/i },
-  { intent: "measure", matches: /\bmeasure\b|\barea\b|\bperimeter\b|\bdistance\b|\bhow (?:large|big|much land)\b|\bextent\b/i },
+  { intent: "measure", matches: /\bmeasure\b|\bperimeter\b|\bdistance\b|\bhow (?:large|big|much land)\b|\barea (?:of|is|does|measure)\b|\bwhat (?:is|is the) (?:area|size)\b|\bextent\b/i },
   { intent: "objects", matches: /\bobject(?:s)?\b|\bcount\b|\bbuildings?\b|\broads?\b|\bvehicles?\b|\btrees?\b|\bsegment(?:ation)?\b|\bhouses?\b/i },
 ];
 

@@ -8,6 +8,9 @@ ALETHEOPSIS is an Earth-observation workspace built around a 3D globe, real Cope
 - Public, live catalogue discovery from the Copernicus Data Space STAC API for Sentinel-2 L2A and Sentinel-1 GRD.
 - Actual acquisition identifiers, timestamps, cloud-cover metadata, platform, orbit and SAR polarization where returned by the catalogue.
 - Map-selected AOIs, date range, sensor selection and source query handling.
+- An evidence-bounded intelligence conversation: it can answer follow-up questions about measurements, available scenes, methods, weather screening, incident records and outstanding evidence without inventing a pixel-derived finding. The same evidence pack is exposed as a strict server-side LLM / compact-model hand-off contract.
+- Disaster-mode time-window context: NASA EONET public incident records are queried against the selected AOI and dates, while Open-Meteo separates historical daily-rainfall context from available forecast days. An empty feed is explicitly not presented as proof that no incident occurred.
+- Downloadable, self-contained research records in printable HTML, Markdown or JSON, carrying the question, AOI, calculation method, output, source links, incident context and caveats.
 - A FastAPI service that safely proxies catalogue searches and contains the server-only Sentinel Hub rendering route.
 - Optional Google Maps Platform Photorealistic 3D Tiles as a contextual visual layer when a licensed restricted key is configured.
 - PostGIS schema, local Docker setup, Render Blueprint, and sign-in boundary for Supabase Google/email authentication.
@@ -40,6 +43,7 @@ The default frontend configuration uses `http://localhost:8000`. If the API is n
 - **Latest available acquisition is not live streaming.** The interface displays source time and quality so operational teams can assess latency.
 - **Google 3D tiles are visual context only.** They must not be cached, analysed, used for model input, or offered as evidence. Sentinel/authorised sources remain the evidence layer.
 - **NISAR is not shown as a connected live feed.** Its L-band and S-band source routes need a separate Earthdata/ASF or authorised ISRO connector before use.
+- **Conversation is evidence-bounded.** A hosted LLM or compact local model must receive the exported evidence contract on the server and may not turn catalogue metadata, weather context or an incident feed into an unverified impact claim.
 
 ## Production setup
 
