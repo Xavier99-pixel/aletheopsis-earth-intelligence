@@ -92,6 +92,18 @@ export async function getAuthenticatedIdentity(): Promise<Identity | null> {
   return identityFromUser(data.user);
 }
 
+/**
+ * Returns a short-lived Supabase access token only after this tab completed an
+ * explicit sign-in flow. It is used for server-side protected capabilities;
+ * provider API keys never enter the browser.
+ */
+export async function getAuthenticatedAccessToken(): Promise<string | null> {
+  if (!supabase || !shouldRestoreAuthAfterLogin()) return null;
+  const { data, error } = await supabase.auth.getSession();
+  if (error || !data.session?.access_token) return null;
+  return data.session.access_token;
+}
+
 export function onAuthIdentityChange(onChange: (identity: Identity | null) => void) {
   if (!supabase) return () => undefined;
   const { data } = supabase.auth.onAuthStateChange((event, session) => {

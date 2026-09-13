@@ -87,25 +87,47 @@ CDSE_CLIENT_ID=server-only
 CDSE_CLIENT_SECRET=server-only
 DATABASE_URL=server-only
 REDIS_URL=server-only
+OPENAI_API_KEY=server-only
+OPENAI_MODEL=gpt-5.2
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=server-only-supabase-publishable-key
+INTELLIGENCE_MAX_REQUESTS_PER_MINUTE=12
 S3_ENDPOINT=server-only
 S3_ACCESS_KEY_ID=server-only
 S3_SECRET_ACCESS_KEY=server-only
 S3_BUCKET=server-only
 ```
 
-## 6. NISAR source policy
+## 6. Optional hosted intelligence synthesis
+
+The browser always keeps the deterministic evidence answer available. The hosted synthesis switch only appears once the frontend knows the API URL, and it only sends the user question plus the evidence already visible in the workspace after the user opts in.
+
+1. Deploy the FastAPI service first and configure `ALLOWED_ORIGINS` with the exact frontend origin.
+2. On that **API service only**, set `OPENAI_API_KEY`. Do not create a `VITE_OPENAI_API_KEY` variable and do not add the key to Supabase, GitHub or the static frontend service.
+3. Set `OPENAI_MODEL` only if you need to select a supported server-side model; otherwise leave the blueprint default.
+4. Copy the existing Supabase project URL and anonymous/publishable key to the API service as `SUPABASE_URL` and `SUPABASE_ANON_KEY`. The API validates the signed-in user's Supabase access token before it spends a hosted-model request.
+5. Set `INTELLIGENCE_MAX_REQUESTS_PER_MINUTE` (the blueprint uses `12`). This is a per-instance protective limit; add Redis-backed rate limiting before a multi-instance production rollout.
+6. Leave `INTELLIGENCE_ALLOW_UNAUTHENTICATED` unset or `false` in Render. It exists only for a deliberately local development test.
+7. Set `VITE_BACKEND_BASE_URL` on the **frontend** to the API's HTTPS URL and redeploy the static site, because Vite variables are compiled into the frontend build.
+
+The route uses a fixed server-side instruction, omits all provider keys from the browser, sends an opaque hashed user identifier for provider safety controls, and returns the deterministic evidence claim status rather than letting a model promote it. If the API, authentication or model provider is unavailable, the UI continues with its local evidence-bound answer.
+
+Reference: [OpenAI Responses API](https://developers.openai.com/api/reference/cli/resources/responses/methods/create).
+
+## 7. NISAR source policy
 
 NISAR mission information is useful for source planning, but `nisar.jpl.nasa.gov` is not the operational imagery API. Do not label NISAR connected until a source connector has been tested. For L-band, create a server-side Earthdata/ASF workflow; validate ISRO Bhoonidhi access requirements separately for S-band products. Preserve product ID, acquisition time, processing level, licence and source URL in the evidence record.
 
 References: [NASA NISAR mission](https://science.nasa.gov/mission/nisar/), [ASF NISAR access overview](https://nisar-docs.asf.alaska.edu/access-overview/).
 
-## 7. GitHub and Render
+## 8. GitHub and Render
 
 1. Create an empty repository named `aletheopsis-earth-intelligence` under the chosen GitHub account.
 2. Keep `.env`, `backend/.env`, `.venv`, `node_modules` and `dist` out of Git.
 3. Push this project to the default branch.
 4. In Render, choose **New > Blueprint** and select the repository. The supplied `render.yaml` creates a static frontend and FastAPI API service.
 5. Deploy the API first, copy its HTTPS URL into `VITE_BACKEND_BASE_URL` on the frontend service, then redeploy the frontend.
-6. Add the API URL to `ALLOWED_ORIGINS` and the frontend URL to Supabase redirect settings.
+6. Add the frontend URL to `ALLOWED_ORIGINS` on the API service and to Supabase redirect settings.
+7. For hosted synthesis, add the API-only variables in section 6, then redeploy the API and the frontend.
 
 Do not enable production data processing until the API has CDSE credentials, a PostGIS connection, object storage and an audit strategy.

@@ -20,6 +20,18 @@ services:
         sync: false
       - key: REDIS_URL
         sync: false
+      # Optional, authenticated hosted evidence synthesis. Keep all of these
+      # server-side; INTELLIGENCE_ALLOW_UNAUTHENTICATED must stay unset in Render.
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-5.2
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: INTELLIGENCE_MAX_REQUESTS_PER_MINUTE
+        value: "12"
 
   - type: web
     name: aletheopsis-earth-intelligence

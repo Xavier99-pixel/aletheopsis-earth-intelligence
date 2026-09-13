@@ -59,6 +59,10 @@ Keep these in Render/secret manager configuration only. Do not prefix them with 
 | `DATABASE_URL` | PostgreSQL/PostGIS connection string |
 | `REDIS_URL` | Queue, cache and background-job broker |
 | `CDSE_CLIENT_ID` / `CDSE_CLIENT_SECRET` | Copernicus Data Space OAuth client credentials |
+| `OPENAI_API_KEY` | Optional hosted evidence-synthesis provider key; API only, never browser-visible |
+| `OPENAI_MODEL` | Optional server-side hosted model selection |
+| `SUPABASE_URL` / `SUPABASE_ANON_KEY` | Validate a signed-in user's access token before hosted synthesis |
+| `INTELLIGENCE_MAX_REQUESTS_PER_MINUTE` | Per-instance guard for hosted synthesis; move to Redis for multi-instance production |
 | `S3_ENDPOINT` / `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` / `S3_BUCKET` | S3, R2 or MinIO raster/evidence object storage |
 | `SUPABASE_JWT_SECRET` or `OIDC_JWKS_URL` | Verify user access tokens on the API |
 | `GOOGLE_MAPS_API_KEY` | Server-side key only if server APIs are used; separate from browser-restricted visualisation key |

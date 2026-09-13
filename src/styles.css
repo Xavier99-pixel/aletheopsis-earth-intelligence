@@ -1899,6 +1899,11 @@ textarea:focus-visible {
   background: rgba(255, 255, 255, 0.035);
 }
 
+.conversation-message--hosted {
+  border-color: rgba(240, 200, 41, 0.42);
+  background: linear-gradient(110deg, rgba(240, 200, 41, 0.09), rgba(255, 255, 255, 0.025));
+}
+
 .conversation-message--user {
   justify-self: end;
   color: #191706;
@@ -2029,6 +2034,39 @@ textarea:focus-visible {
   font-size: 0.61rem;
   letter-spacing: 0.065em;
   text-transform: uppercase;
+}
+
+.conversation-panel__hosted-toggle {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.15rem 0.48rem;
+  align-items: center;
+  padding: 0.54rem 0.58rem;
+  color: #dfe1d8;
+  border: 1px solid rgba(240, 200, 41, 0.24);
+  background: rgba(240, 200, 41, 0.045);
+  cursor: pointer;
+  font-size: 0.68rem;
+}
+
+.conversation-panel__hosted-toggle input {
+  width: 0.92rem;
+  height: 0.92rem;
+  margin: 0;
+  accent-color: #f0c829;
+}
+
+.conversation-panel__hosted-toggle small {
+  grid-column: 2;
+  color: #979c92;
+  font-size: 0.61rem;
+  line-height: 1.35;
+}
+
+.conversation-panel__hosted-status {
+  color: #c7a91d;
+  font-size: 0.62rem;
+  line-height: 1.4;
 }
 
 .conversation-panel__composer > div {

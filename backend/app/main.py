@@ -10,6 +10,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, model_validator
 
+from .intelligence import router as intelligence_router
+
 CDSE_STAC_SEARCH = "https://stac.dataspace.copernicus.eu/v1/search"
 CDSE_TOKEN_URL = "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
 CDSE_PROCESS_URL = "https://sh.dataspace.copernicus.eu/process/v1"
@@ -25,6 +27,7 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
 )
+app.include_router(intelligence_router)
 
 
 class AreaOfInterest(BaseModel):
@@ -165,6 +168,11 @@ async def health():
         "status": "ok",
         "catalogue": "public-stac",
         "imageryProcessing": bool(os.getenv("CDSE_CLIENT_ID") and os.getenv("CDSE_CLIENT_SECRET")),
+        "hostedIntelligence": bool(
+            os.getenv("OPENAI_API_KEY")
+            and os.getenv("SUPABASE_URL")
+            and os.getenv("SUPABASE_ANON_KEY")
+        ),
     }
 
 

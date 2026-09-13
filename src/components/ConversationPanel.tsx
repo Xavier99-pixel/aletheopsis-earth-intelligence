@@ -2,12 +2,15 @@ import { ArrowUp, Bot, Database, ShieldCheck, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   buildConversationTurn,
+  createEvidenceBoundModelRequest,
   type ConversationContext,
   type ConversationTurn,
   type DisasterTimelineContext,
 } from "../lib/conversationEngine";
 import type { InvestigationBrief } from "../lib/investigationEngine";
 import type { CatalogScene, InvestigationRequest } from "../lib/types";
+import { authConfigured, getAuthenticatedAccessToken } from "../services/auth";
+import { isIntelligenceChatConfigured, requestIntelligenceChat, type IntelligenceChatResponse } from "../services/intelligenceChat";
 import type { RainfallOutlook } from "../services/weather";
 
 type ConversationPanelProps = {
@@ -23,7 +26,8 @@ type ConversationPanelProps = {
 
 type ChatMessage =
   | { id: string; role: "user"; text: string }
-  | { id: string; role: "assistant"; turn: ConversationTurn };
+  | { id: string; role: "assistant"; turn: ConversationTurn }
+  | { id: string; role: "hosted"; response: IntelligenceChatResponse };
 
 function makeMessageId(counter: number) {
   return `conversation-${Date.now()}-${counter}`;
@@ -66,12 +70,25 @@ export function ConversationPanel({
   const contextKey = `${request.question}|${request.aoi.name}|${request.aoi.bbox.join(",")}|${request.startDate}|${request.endDate}|${request.sensors.join(",")}|${request.tools.join(",")}|${brief?.generatedAt ?? "no-brief"}|${brief?.question ?? ""}|${rainfallOutlook?.fetchedAt ?? "no-weather"}|${timeline?.events.map((event) => `${event.id ?? event.title}:${event.date}`).join("|") ?? "no-timeline"}`;
   const [messages, setMessages] = useState<ChatMessage[]>(() => [messageForContext(context)]);
   const [draft, setDraft] = useState("");
+  const [hostedEnabled, setHostedEnabled] = useState(false);
+  const [hostedStatus, setHostedStatus] = useState<"ready" | "working" | "unavailable">("ready");
   const sequence = useRef(0);
+  const activeContextKey = useRef(contextKey);
+  const hostedRequest = useRef<AbortController | null>(null);
+  // The service only accepts a verified Supabase session, so do not advertise
+  // the paid hosted path inside the intentionally unauthenticated demo mode.
+  const hostedAvailable = authConfigured && isIntelligenceChatConfigured();
 
   useEffect(() => {
+    hostedRequest.current?.abort();
+    hostedRequest.current = null;
+    activeContextKey.current = contextKey;
     setMessages([messageForContext(context)]);
     setDraft("");
+    setHostedStatus("ready");
   }, [contextKey]);
+
+  useEffect(() => () => hostedRequest.current?.abort(), []);
 
   const latestAssistant = [...messages].reverse().find((message): message is Extract<ChatMessage, { role: "assistant" }> => message.role === "assistant");
 
@@ -79,14 +96,39 @@ export function ConversationPanel({
     event.preventDefault();
     const question = draft.trim();
     if (!question || disabled) return;
-    sequence.current += 1;
+    sequence.current += 3;
     const turn = buildConversationTurn(context, question);
+    const currentSequence = sequence.current;
+    const requestedContextKey = contextKey;
     setMessages((previous) => [
       ...previous,
-      { id: makeMessageId(sequence.current), role: "user", text: question },
-      { id: makeMessageId(sequence.current + 1), role: "assistant", turn },
+      { id: makeMessageId(currentSequence), role: "user", text: question },
+      { id: makeMessageId(currentSequence + 1), role: "assistant", turn },
     ]);
     setDraft("");
+
+    if (!hostedAvailable || !hostedEnabled) return;
+    hostedRequest.current?.abort();
+    const controller = new AbortController();
+    hostedRequest.current = controller;
+    setHostedStatus("working");
+    const modelRequest = createEvidenceBoundModelRequest(context, question);
+    void (async () => {
+      const accessToken = await getAuthenticatedAccessToken();
+      const response = await requestIntelligenceChat(modelRequest, { accessToken, signal: controller.signal });
+      if (controller.signal.aborted || activeContextKey.current !== requestedContextKey) return;
+      if (!response) {
+        if (hostedRequest.current === controller) hostedRequest.current = null;
+        setHostedStatus("unavailable");
+        return;
+      }
+      setMessages((previous) => [
+        ...previous,
+        { id: makeMessageId(currentSequence + 2), role: "hosted", response },
+      ]);
+      setHostedStatus("ready");
+      if (hostedRequest.current === controller) hostedRequest.current = null;
+    })();
   }
 
   function useSuggestedQuestion(question: string) {
@@ -104,6 +146,18 @@ export function ConversationPanel({
         {messages.map((message) => {
           if (message.role === "user") {
             return <div className="conversation-message conversation-message--user" key={message.id}>{message.text}</div>;
+          }
+          if (message.role === "hosted") {
+            const { response } = message;
+            return (
+              <article className="conversation-message conversation-message--hosted" key={message.id}>
+                <div className="conversation-message__heading"><Bot size={14} /><span>Hosted evidence synthesis</span></div>
+                <p>{response.answer}</p>
+                <small className="conversation-message__boundary">
+                  {response.provider ?? "Hosted model"}{response.model ? ` · ${response.model}` : ""} · claim status remains {response.claimStatus ?? "evidence-bounded"}.
+                </small>
+              </article>
+            );
           }
           const { turn } = message;
           return (
@@ -154,6 +208,13 @@ export function ConversationPanel({
 
       <form className="conversation-panel__composer" onSubmit={submit}>
         <label htmlFor="intelligence-follow-up">Ask a follow-up about the current evidence</label>
+        {hostedAvailable && (
+          <label className="conversation-panel__hosted-toggle">
+            <input type="checkbox" checked={hostedEnabled} onChange={(event) => setHostedEnabled(event.target.checked)} disabled={disabled || hostedStatus === "working"} />
+            <span>Use hosted AI synthesis</span>
+            <small>Shares this question and displayed evidence with the secured analysis service.</small>
+          </label>
+        )}
         <div>
           <textarea
             id="intelligence-follow-up"
@@ -165,6 +226,8 @@ export function ConversationPanel({
           />
           <button type="submit" aria-label="Send follow-up question" disabled={disabled || !draft.trim()}><ArrowUp size={17} /></button>
         </div>
+        {hostedAvailable && hostedStatus === "working" && <small className="conversation-panel__hosted-status">Preparing evidence-bounded synthesis…</small>}
+        {hostedAvailable && hostedStatus === "unavailable" && <small className="conversation-panel__hosted-status">Hosted synthesis is unavailable; the local evidence response remains the active answer.</small>}
         {onUseQuestion && draft.trim() && (
           <button className="conversation-panel__use-question" type="button" onClick={() => onUseQuestion(draft.trim())} disabled={disabled}>
             Use this question in investigation
