@@ -53,6 +53,26 @@ function aoiKey(aoi: AreaOfInterest) {
   return `${aoi.name}:${aoi.bbox.join(",")}`;
 }
 
+function clamp(value: number, lower: number, upper: number) {
+  return Math.max(lower, Math.min(upper, value));
+}
+
+function pointAoi(latitude: number, longitude: number): AreaOfInterest {
+  // Roughly 7.8 km across at the equator: small enough for a focused inquiry
+  // while still being a valid, queryable STAC bounding box.
+  const halfSide = 0.035;
+  return {
+    name: `Globe selection · ${latitude.toFixed(4)}°, ${longitude.toFixed(4)}°`,
+    bbox: [
+      clamp(longitude - halfSide, -180, 180),
+      clamp(latitude - halfSide, -89.95, 89.95),
+      clamp(longitude + halfSide, -180, 180),
+      clamp(latitude + halfSide, -89.95, 89.95),
+    ],
+    source: "map",
+  };
+}
+
 function cameraHeightFor(aoi: AreaOfInterest) {
   const [west, south, east, north] = aoi.bbox;
   const widestSide = Math.max(Math.abs(east - west), Math.abs(north - south), 0.03);
@@ -181,17 +201,17 @@ export function CesiumGlobe({
           pointerHandler = new ScreenSpaceEventHandler(viewer.scene.canvas);
           pointerHandler.setInputAction((event: { position: Cartesian2 }) => {
             if (!selectionModeRef.current) return;
-            const cartesian = viewer?.camera.pickEllipsoid(event.position, viewer.scene.globe.ellipsoid);
+            const ray = viewer?.camera.getPickRay(event.position);
+            // Prefer the rendered globe surface so clicking over terrain stays
+            // geographically stable; retain the ellipsoid as a safe fallback.
+            const cartesian = ray && viewer
+              ? viewer.scene.globe.pick(ray, viewer.scene) ?? viewer.camera.pickEllipsoid(event.position, viewer.scene.globe.ellipsoid)
+              : undefined;
             if (!cartesian || !viewer) return;
             const coordinate = Cartographic.fromCartesian(cartesian);
             const longitude = CesiumMath.toDegrees(coordinate.longitude);
             const latitude = CesiumMath.toDegrees(coordinate.latitude);
-            const halfSide = 0.035;
-            onAoiChangeRef.current?.({
-              name: `Selected AOI · ${latitude.toFixed(3)}°, ${longitude.toFixed(3)}°`,
-              bbox: [longitude - halfSide, latitude - halfSide, longitude + halfSide, latitude + halfSide],
-              source: "map",
-            });
+            onAoiChangeRef.current?.(pointAoi(latitude, longitude));
             selectionModeRef.current = false;
             setSelectionMode(false);
           }, ScreenSpaceEventType.LEFT_CLICK);
@@ -287,7 +307,7 @@ export function CesiumGlobe({
         <div className="map-source">
           <span className="map-source__eyebrow">Area of interest</span>
           <strong>{aoi.name}</strong>
-          <small>{aoi.source === "map" ? "Map-selected boundary" : "Preset operating area"}</small>
+          <small>{aoi.source === "map" ? "Globe-selected analysis cell" : "Preset operating area"}</small>
         </div>
         <div className="globe-panel__actions">
           <span className="map-metadata"><Satellite size={14} /> {formatAcquisition(latestScene)}</span>
@@ -296,9 +316,9 @@ export function CesiumGlobe({
             className={`map-action ${selectionMode ? "is-active" : ""}`}
             onClick={() => setSelectionMode((active) => !active)}
             aria-pressed={selectionMode}
-            title="Choose an area on the map"
+            title="Click anywhere on the globe to create a focused analysis area"
           >
-            <Crosshair size={15} /> {selectionMode ? "Click map to set AOI" : "Select on map"}
+            <Crosshair size={15} /> {selectionMode ? "Click globe to set AOI" : "Select on globe"}
           </button>
           <button type="button" className="map-action" onClick={resetView} title="Return to the selected area" aria-label="Reset map view">
             <Home size={15} /> Reset view
@@ -320,6 +340,7 @@ export function CesiumGlobe({
           </button>
         </div>
       </div>
+      {selectionMode && <p className="globe-panel__selection-hint" role="status">Click the globe to create a focused analysis cell around that location.</p>}
       {webglReady ? <div className="cesium-host" ref={containerRef} /> : (
         <div className="globe-fallback"><strong>3D map unavailable</strong><span>WebGL is required for the Earth view.</span></div>
       )}

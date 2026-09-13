@@ -37,7 +37,9 @@ function messageForContext(context: ConversationContext): ChatMessage {
   return {
     id: "conversation-initial",
     role: "assistant",
-    turn: buildConversationTurn(context, "Summarise the current investigation."),
+    // Start from the actual investigation question so a simple rainfall or
+    // climate question receives the live atmospheric answer immediately.
+    turn: buildConversationTurn(context, context.request.question || "Summarise the current investigation."),
   };
 }
 
@@ -185,7 +187,7 @@ export function ConversationPanel({
                       {turn.sources.map((source) => (
                         <div className="conversation-evidence-row" key={source.id}>
                           <span>{sourceIcon(source.kind)} {source.label}</span>
-                          {source.href ? <a href={source.href} target="_blank" rel="noreferrer">Open source</a> : <b>Context</b>}
+                          <b>{source.href ? "Recorded asset" : "Context"}</b>
                           <small>{source.detail}</small>
                         </div>
                       ))}

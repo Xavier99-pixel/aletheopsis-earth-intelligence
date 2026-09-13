@@ -7,10 +7,12 @@ ALETHEOPSIS is an Earth-observation workspace built around a 3D globe, real Cope
 - A globe-first black, white and signal-yellow operator interface built with React, TypeScript and CesiumJS.
 - Public, live catalogue discovery from the Copernicus Data Space STAC API for Sentinel-2 L2A and Sentinel-1 GRD.
 - Actual acquisition identifiers, timestamps, cloud-cover metadata, platform, orbit and SAR polarization where returned by the catalogue.
-- Map-selected AOIs, date range, sensor selection and source query handling.
-- An evidence-bounded intelligence conversation: it can answer follow-up questions about measurements, available scenes, methods, weather screening, incident records and outstanding evidence without inventing a pixel-derived finding. When configured, a signed-in user can opt into a protected server-side hosted synthesis of that same visible evidence; the deterministic local answer remains the fallback.
-- Disaster-mode time-window context: NASA EONET public incident records are queried against the selected AOI and dates, while Open-Meteo separates historical daily-rainfall context from available forecast days. An empty feed is explicitly not presented as proof that no incident occurred.
-- Downloadable, self-contained research records in printable HTML, Markdown or JSON, carrying the question, AOI, calculation method, output, source links, incident context and caveats.
+- Place search and direct globe selection, date range, sensor selection and source query handling.
+- Live coordinate-specific atmospheric intelligence: current conditions, a seven-day precipitation forecast, a recent 30-day rainfall pattern, and a monthly climate baseline. The forecast is rendered as weather context, never silently promoted to a flood or damage prediction.
+- An evidence-bounded intelligence conversation: it can answer follow-up questions about measurements, available scenes, methods, live weather, incident records and outstanding evidence without inventing a pixel-derived finding. When configured, a signed-in user can opt into a protected server-side hosted synthesis of that same visible evidence; the deterministic local answer remains the fallback.
+- Evidence-led processing modules explicitly show what has been computed (AOI geometry) versus what is ready for source-pixel processing (vegetation, change, flood extent and objects), together with the required method and available scene identifiers.
+- Disaster-mode time-window context: NASA EONET public incident records are queried against the selected AOI and dates, while the atmospheric route separates historical daily-rainfall context from forecast days. An empty feed is explicitly not presented as proof that no incident occurred.
+- Downloadable, self-contained research records in printable HTML, Markdown or JSON, carrying the question, AOI, calculation method, atmospheric data, output, source links, incident context and caveats.
 - A FastAPI service that safely proxies catalogue searches and contains the server-only Sentinel Hub rendering route.
 - Optional Google Maps Platform Photorealistic 3D Tiles as a contextual visual layer when a licensed restricted key is configured.
 - PostGIS schema, local Docker setup, Render Blueprint, and sign-in boundary for Supabase Google/email authentication.

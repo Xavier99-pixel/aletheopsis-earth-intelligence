@@ -5,7 +5,7 @@ import { buildInvestigationBrief, type InvestigationBrief } from "./lib/investig
 import type { AreaOfInterest, CatalogAssessment, Identity, InvestigationRequest } from "./lib/types";
 import { searchLiveCatalogue } from "./services/catalog";
 import { finishAuthentication, getAuthenticatedIdentity, onAuthIdentityChange } from "./services/auth";
-import { loadRainfallOutlook, type RainfallOutlook } from "./services/weather";
+import { isWeatherQuestion, loadRainfallOutlook, type RainfallOutlook } from "./services/weather";
 import { loadDisasterTimeline, type DisasterTimeline } from "./services/disasterTimeline";
 import { loadSelectedWindowWeather, type SelectedWindowWeather } from "./services/weatherTimeline";
 import { AccessGate } from "./components/AccessGate";
@@ -60,12 +60,16 @@ export default function App() {
     setRunning(true);
     setError(null);
     try {
-      const asksForOutlook = /\bflood(?:ed|ing)?\b|\brain\b|\bprecipitation\b|\bforecast\b|\bexpect(?:ed|ation)?\b|\brisk\b|\bwill\b/i.test(request.question);
+      const asksForWeather = isWeatherQuestion(request.question);
       const disasterMode = identity?.role === "Disaster management" || DISASTER_QUERY.test(request.question);
       const [catalogue, rainfall, windowWeather, timeline] = await Promise.all([
         searchLiveCatalogue(request),
-        asksForOutlook ? loadRainfallOutlook(request.aoi) : Promise.resolve(null),
-        disasterMode ? loadSelectedWindowWeather(request.aoi, request.startDate, request.endDate) : Promise.resolve(null),
+        // A current atmospheric picture is useful for every investigation and
+        // makes simple rainfall/weather questions immediately actionable.
+        loadRainfallOutlook(request.aoi),
+        asksForWeather || disasterMode
+          ? loadSelectedWindowWeather(request.aoi, request.startDate, request.endDate)
+          : Promise.resolve(null),
         disasterMode ? loadDisasterTimeline(request.aoi, request.startDate, request.endDate) : Promise.resolve(null),
       ]);
       setResult(buildCatalogAssessment(request, catalogue));

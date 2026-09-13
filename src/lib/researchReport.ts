@@ -116,6 +116,38 @@ export type ResearchReportDocument = {
     totalMillimetres?: number;
     peakDailyMillimetres?: number;
     peakProbability?: number;
+    currentConditions?: {
+      observedAt?: string;
+      temperatureCelsius?: number;
+      humidityPercent?: number;
+      precipitationMillimetres?: number;
+      windKilometresPerHour?: number;
+      condition: string;
+    };
+    dailyForecast?: Array<{
+      date: string;
+      precipitationMillimetres: number;
+      precipitationProbability: number;
+      temperatureMinimumCelsius?: number;
+      temperatureMaximumCelsius?: number;
+      condition: string;
+    }>;
+    recentRainfall?: {
+      startDate: string;
+      endDate: string;
+      sampledDays: number;
+      totalMillimetres: number;
+      peakDailyMillimetres: number;
+      rainyDays: number;
+    };
+    climatePattern?: {
+      month: string;
+      baseline: string;
+      meanDailyPrecipitationMillimetres: number;
+      estimatedMonthlyPrecipitationMillimetres: number;
+      meanTemperatureCelsius: number;
+    };
+    caveat?: string;
   };
   disasterTimeline: {
     status: "available" | "limited" | "unavailable";
@@ -233,15 +265,37 @@ function catalogueRecord(assessment: CatalogAssessment | null | undefined): Rese
 function predictiveScreening(outlook: RainfallOutlook | null | undefined): ResearchReportDocument["predictiveScreening"] {
   if (!outlook) return undefined;
   return {
-    label: outlook.label,
+    label: "Atmospheric outlook · " + outlook.label,
     status: outlook.watchLevel,
-    detail: outlook.detail,
-    source: { label: outlook.source, url: "https://open-meteo.com/" },
+    detail: `${outlook.detail} ${outlook.caveat}`,
+    source: {
+      label: "Atmospheric forecast and climate record",
+      detail: outlook.provenance.map((record) => `${record.product}: ${record.role}`).join(" | "),
+    },
     validFrom: outlook.startDate,
     validTo: outlook.endDate,
     totalMillimetres: outlook.totalMillimetres,
     peakDailyMillimetres: outlook.peakDailyMillimetres,
     peakProbability: outlook.peakProbability,
+    currentConditions: outlook.current ? {
+      observedAt: outlook.current.observedAt,
+      temperatureCelsius: outlook.current.temperatureCelsius,
+      humidityPercent: outlook.current.humidityPercent,
+      precipitationMillimetres: outlook.current.precipitationMillimetres,
+      windKilometresPerHour: outlook.current.windKilometresPerHour,
+      condition: outlook.current.condition,
+    } : undefined,
+    dailyForecast: outlook.dailyForecast.map((day) => ({
+      date: day.date,
+      precipitationMillimetres: day.precipitationMillimetres,
+      precipitationProbability: day.precipitationProbability,
+      temperatureMinimumCelsius: day.temperatureMinimumCelsius,
+      temperatureMaximumCelsius: day.temperatureMaximumCelsius,
+      condition: day.condition,
+    })),
+    recentRainfall: outlook.recentRainfall ? { ...outlook.recentRainfall } : undefined,
+    climatePattern: outlook.climatePattern ? { ...outlook.climatePattern } : undefined,
+    caveat: outlook.caveat,
   };
 }
 
@@ -292,7 +346,11 @@ function sourceRecords(
     }
   });
   if (outlook) {
-    sources.push({ category: "weather", label: outlook.source, url: "https://open-meteo.com/", detail: "Seven-day precipitation screening context." });
+    sources.push({
+      category: "weather",
+      label: "Atmospheric forecast and climate record",
+      detail: outlook.provenance.map((record) => `${record.product}: ${record.role}`).join(" | "),
+    });
   }
   if (timeline.source) {
     sources.push({ category: "incident", ...timeline.source, detail: timeline.source.detail ?? "Incident timeline context." });
@@ -386,6 +444,70 @@ function markdownTable(rows: readonly string[][], headers: readonly string[]) {
   return `${header}\n${divider}\n${body}\n`;
 }
 
+function atmosphericMarkdown(screening: NonNullable<ResearchReportDocument["predictiveScreening"]>) {
+  const lines = [
+    `**${screening.label}** (${screening.status})`,
+    "",
+    screening.detail,
+    "",
+    `**Valid window:** ${screening.validFrom ?? "—"} to ${screening.validTo ?? "—"}  `,
+    `**Record:** ${markdownLink(screening.source)}`,
+    "",
+  ];
+
+  if (screening.currentConditions) {
+    const current = screening.currentConditions;
+    lines.push(
+      "### Current conditions",
+      "",
+      `${current.condition}${current.observedAt ? ` · ${current.observedAt}` : ""}${current.temperatureCelsius === undefined ? "" : ` · ${current.temperatureCelsius.toFixed(1)} °C`}${current.humidityPercent === undefined ? "" : ` · ${Math.round(current.humidityPercent)}% humidity`}${current.windKilometresPerHour === undefined ? "" : ` · ${current.windKilometresPerHour.toFixed(1)} km/h wind`}.`,
+      "",
+    );
+  }
+
+  if (screening.dailyForecast && screening.dailyForecast.length > 0) {
+    lines.push(
+      "### Seven-day rainfall forecast",
+      "",
+      markdownTable(
+        screening.dailyForecast.map((day) => [
+          day.date,
+          `${day.precipitationMillimetres.toFixed(1)} mm`,
+          `${day.precipitationProbability}%`,
+          day.temperatureMinimumCelsius === undefined || day.temperatureMaximumCelsius === undefined
+            ? "—"
+            : `${day.temperatureMinimumCelsius.toFixed(0)}–${day.temperatureMaximumCelsius.toFixed(0)} °C`,
+          day.condition,
+        ]),
+        ["Date", "Rainfall", "Probability", "Temperature", "Condition"],
+      ),
+    );
+  }
+
+  if (screening.recentRainfall) {
+    const record = screening.recentRainfall;
+    lines.push(
+      "### Recent rainfall record",
+      "",
+      `${record.startDate} to ${record.endDate}: ${record.totalMillimetres.toFixed(1)} mm across ${record.sampledDays} days; ${record.rainyDays} rainy days; ${record.peakDailyMillimetres.toFixed(1)} mm wettest day.`,
+      "",
+    );
+  }
+
+  if (screening.climatePattern) {
+    const climate = screening.climatePattern;
+    lines.push(
+      "### Monthly climate baseline",
+      "",
+      `${climate.month}: ${climate.estimatedMonthlyPrecipitationMillimetres.toFixed(1)} mm estimated monthly precipitation, ${climate.meanDailyPrecipitationMillimetres.toFixed(1)} mm/day and ${climate.meanTemperatureCelsius.toFixed(1)} °C mean temperature. ${climate.baseline}`,
+      "",
+    );
+  }
+
+  if (screening.caveat) lines.push(`**Interpretation:** ${screening.caveat}`, "");
+  return lines;
+}
+
 /** Render a human-readable Markdown report with all evidence and caveats. */
 export function renderResearchReportMarkdown(report: ResearchReportDocument) {
   const aoi = report.investigation.areaOfInterest;
@@ -455,22 +577,14 @@ export function renderResearchReportMarkdown(report: ResearchReportDocument) {
     "### Acquisitions",
     "",
     markdownTable(acquisitionRows, ["Collection", "Time", "Scene ID", "Cloud", "STAC item"]),
-    "## Predictive screening",
+    "## Atmospheric outlook",
     "",
   ];
 
   if (report.predictiveScreening) {
-    lines.push(
-      `**${report.predictiveScreening.label}** (${report.predictiveScreening.status})`,
-      "",
-      report.predictiveScreening.detail,
-      "",
-      `**Valid window:** ${report.predictiveScreening.validFrom ?? "—"} to ${report.predictiveScreening.validTo ?? "—"}  `,
-      `**Source:** ${markdownLink(report.predictiveScreening.source)}`,
-      "",
-    );
+    lines.push(...atmosphericMarkdown(report.predictiveScreening));
   } else {
-    lines.push("No live screening result was attached to this investigation.", "");
+    lines.push("No live atmospheric result was attached to this investigation.", "");
   }
 
   lines.push(
@@ -526,6 +640,36 @@ function tableHtml(headers: readonly string[], rows: readonly string[][]) {
   return `<div class="table-wrap"><table><thead><tr>${headers.map((header) => `<th>${htmlEscape(header)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${htmlEscape(cell)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
 }
 
+function atmosphericHtml(screening: NonNullable<ResearchReportDocument["predictiveScreening"]>) {
+  const current = screening.currentConditions;
+  const currentHtml = current
+    ? `<h3>Current conditions</h3><p>${htmlEscape(`${current.condition}${current.observedAt ? ` · ${current.observedAt}` : ""}${current.temperatureCelsius === undefined ? "" : ` · ${current.temperatureCelsius.toFixed(1)} °C`}${current.humidityPercent === undefined ? "" : ` · ${Math.round(current.humidityPercent)}% humidity`}${current.windKilometresPerHour === undefined ? "" : ` · ${current.windKilometresPerHour.toFixed(1)} km/h wind`}.`)}</p>`
+    : "";
+  const forecastHtml = screening.dailyForecast?.length
+    ? `<h3>Seven-day rainfall forecast</h3>${tableHtml(
+      ["Date", "Rainfall", "Probability", "Temperature", "Condition"],
+      screening.dailyForecast.map((day) => [
+        day.date,
+        `${day.precipitationMillimetres.toFixed(1)} mm`,
+        `${day.precipitationProbability}%`,
+        day.temperatureMinimumCelsius === undefined || day.temperatureMaximumCelsius === undefined
+          ? "—"
+          : `${day.temperatureMinimumCelsius.toFixed(0)}–${day.temperatureMaximumCelsius.toFixed(0)} °C`,
+        day.condition,
+      ]),
+    )}`
+    : "";
+  const recent = screening.recentRainfall;
+  const recentHtml = recent
+    ? `<h3>Recent rainfall record</h3><p>${htmlEscape(`${recent.startDate} to ${recent.endDate}: ${recent.totalMillimetres.toFixed(1)} mm across ${recent.sampledDays} days; ${recent.rainyDays} rainy days; ${recent.peakDailyMillimetres.toFixed(1)} mm wettest day.`)}</p>`
+    : "";
+  const climate = screening.climatePattern;
+  const climateHtml = climate
+    ? `<h3>Monthly climate baseline</h3><p>${htmlEscape(`${climate.month}: ${climate.estimatedMonthlyPrecipitationMillimetres.toFixed(1)} mm estimated monthly precipitation, ${climate.meanDailyPrecipitationMillimetres.toFixed(1)} mm/day and ${climate.meanTemperatureCelsius.toFixed(1)} °C mean temperature. ${climate.baseline}`)}</p>`
+    : "";
+  return `<div class="notice"><h3>${htmlEscape(screening.label)} · ${htmlEscape(screening.status)}</h3><p>${htmlEscape(screening.detail)}</p><p><b>Window:</b> ${htmlEscape(screening.validFrom ?? "—")} to ${htmlEscape(screening.validTo ?? "—")}<br><b>Record:</b> ${sourceHtml(screening.source)}</p></div>${currentHtml}${forecastHtml}${recentHtml}${climateHtml}${screening.caveat ? `<p class="muted"><b>Interpretation:</b> ${htmlEscape(screening.caveat)}</p>` : ""}`;
+}
+
 /** Render a printable standalone HTML report. */
 export function renderResearchReportHtml(report: ResearchReportDocument) {
   const aoi = report.investigation.areaOfInterest;
@@ -544,6 +688,9 @@ export function renderResearchReportHtml(report: ResearchReportDocument) {
     ["Metric", "Value", "Detail"],
     report.catalogue.metrics.map((metric) => [metric.label, metric.value, metric.detail]),
   );
+  const outlookHtml = report.predictiveScreening
+    ? atmosphericHtml(report.predictiveScreening)
+    : "<p class=\"muted\">No live atmospheric result was attached to this investigation.</p>";
 
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -556,7 +703,7 @@ export function renderResearchReportHtml(report: ResearchReportDocument) {
 <section><h2>Intelligence output</h2><div class="notice"><b>Claim status:</b> ${htmlEscape(report.output.claimStatus)}</div><p class="lead">${htmlEscape(report.output.naturalLanguageSummary)}</p><div class="grid"><article class="card"><h3>Descriptive response</h3><p>${htmlEscape(report.output.descriptiveResponse)}</p></article><article class="card"><h3>Predictive response</h3><p>${htmlEscape(report.output.predictiveResponse)}</p></article></div></section>
 <section><h2>Deterministic calculations</h2><div class="grid">${calculations}</div></section>
 <section><h2>Catalogue evidence</h2><p><b>Status:</b> ${htmlEscape(report.catalogue.status)}</p><p>${htmlEscape(report.catalogue.summary)}</p>${report.catalogue.source ? `<p><b>Source:</b> ${sourceHtml(report.catalogue.source)}</p>` : ""}<h3>Query metrics</h3>${metricTable}<h3>Acquisitions</h3>${acquisitionTable}</section>
-<section><h2>Predictive screening</h2>${report.predictiveScreening ? `<div class="notice"><h3>${htmlEscape(report.predictiveScreening.label)} · ${htmlEscape(report.predictiveScreening.status)}</h3><p>${htmlEscape(report.predictiveScreening.detail)}</p><p><b>Window:</b> ${htmlEscape(report.predictiveScreening.validFrom ?? "—")} to ${htmlEscape(report.predictiveScreening.validTo ?? "—")}<br><b>Source:</b> ${sourceHtml(report.predictiveScreening.source)}</p></div>` : "<p class=\"muted\">No live screening result was attached to this investigation.</p>"}</section>
+<section><h2>Atmospheric outlook</h2>${outlookHtml}</section>
 <section><h2>Disaster / incident timeline context</h2><div class="notice warn"><p><b>Availability:</b> ${htmlEscape(report.disasterTimeline.status)}</p><p>${htmlEscape(report.disasterTimeline.summary)}</p><p>${htmlEscape(report.disasterTimeline.caveat)}</p>${report.disasterTimeline.source ? `<p><b>Source:</b> ${sourceHtml(report.disasterTimeline.source)}</p>` : ""}</div>${incidentTable}</section>
 <section><h2>Methodology and caveats</h2><h3>Evidence route</h3><ul>${report.methodology.evidenceRoute.map((step) => `<li>${htmlEscape(step)}</li>`).join("")}</ul><h3>Caveats</h3><ul>${report.methodology.caveats.map((caveat) => `<li>${htmlEscape(caveat)}</li>`).join("")}</ul></section>
 <section><h2>Research sources</h2><ul>${report.sources.length > 0 ? report.sources.map((source) => `<li><b>${htmlEscape(source.category)}:</b> ${sourceHtml(source)}${source.detail ? ` — ${htmlEscape(source.detail)}` : ""}</li>`).join("") : "<li>No linked sources were supplied.</li>"}</ul></section>

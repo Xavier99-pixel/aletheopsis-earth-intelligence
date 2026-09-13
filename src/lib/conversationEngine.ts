@@ -109,7 +109,7 @@ const SPACE = /\s+/g;
 const MEASUREMENT_TERMS = /\b(area|size|perimeter|distance|how (?:large|big|much)|measure(?:ment)?)\b/i;
 const METHOD_TERMS = /\b(how (?:did|do)|method|calculation|calculate|formula|workflow|process|why|confidence|evidence)\b/i;
 const CATALOGUE_TERMS = /\b(scene|image(?:ry)?|acquisition|catalog(?:ue|ue)|sentinel|sar|optical|source|date|coverage|cloud)\b/i;
-const WEATHER_TERMS = /\b(weather|rain|rainfall|precipitation|monsoon|storm)\b/i;
+const WEATHER_TERMS = /\b(weather|rain|rainfall|precipitation|monsoon|climate|temperature|humidity|wind|storm|heat|cold|forecast)\b/i;
 const TIMELINE_TERMS = /\b(incident(?:s)?|disaster(?:s)?|calamit(?:y|ies)|event(?:s)?|earthquake|cyclone|landslide|fire|drought|occur(?:red|rence)|history)\b/i;
 const PREDICTIVE_TERMS = /\b(predict|forecast|risk|likely|will|future|expect(?:ed|ation)?)\b/i;
 const PIXEL_ANALYSIS_TERMS = /\b(flood(?:ed|ing)?|inundat(?:e|ed|ion)|water extent|ndvi|vegetation|crop|change|encroach|object|building|road|count|segment)\b/i;
@@ -216,10 +216,9 @@ function weatherSources(rainfallOutlook: RainfallOutlook | null | undefined): Co
   if (!rainfallOutlook) return [];
   return [{
     id: "rainfall-outlook",
-    label: `${rainfallOutlook.source} rainfall outlook`,
-    detail: `${rainfallOutlook.startDate ?? "start date unavailable"} to ${rainfallOutlook.endDate ?? "end date unavailable"}; fetched ${formatDate(rainfallOutlook.fetchedAt)}.`,
+    label: "Atmospheric forecast and climate record",
+    detail: `${rainfallOutlook.startDate ?? "start date unavailable"} to ${rainfallOutlook.endDate ?? "end date unavailable"}; refreshed ${formatDate(rainfallOutlook.fetchedAt)}.`,
     kind: "weather",
-    href: "https://open-meteo.com/",
   }];
 }
 
@@ -377,16 +376,45 @@ function replyForCatalogue(question: string, context: ConversationContext, gener
 function replyForWeather(question: string, context: ConversationContext, generatedAt: string) {
   const outlook = context.rainfallOutlook;
   if (!outlook) {
-    const answer = "No live rainfall screening context is attached to this investigation. A weather or rainfall question can be screened only after a current forecast source is loaded; that screening still is not a flood-extent prediction.";
+    const answer = "The live atmospheric service did not return a usable forecast for this location yet. Re-run the investigation shortly; I will not substitute catalogue metadata for a weather answer.";
     return makeTurn(question, "weather", "not-available", answer, context, [], fallbackSources(context), generatedAt);
   }
-  const answer = `${outlook.label}: ${outlook.totalMillimetres.toFixed(1)} mm is forecast from ${formatDate(outlook.startDate)} to ${formatDate(outlook.endDate)}, with a ${outlook.peakDailyMillimetres.toFixed(1)} mm/day peak and ${outlook.peakProbability}% maximum precipitation probability. This is rainfall context only; it does not estimate flood extent, exposure, or damage.`;
-  return makeTurn(question, "weather", "evidence-bounded", answer, context, [{
+  const current = outlook.current;
+  const currentText = current?.temperatureCelsius === undefined
+    ? "Current conditions were not returned."
+    : `Current conditions: ${current.temperatureCelsius.toFixed(1)}°C, ${current.condition.toLowerCase()}${current.humidityPercent === undefined ? "" : `, ${Math.round(current.humidityPercent)}% humidity`}${current.windKilometresPerHour === undefined ? "" : `, wind ${current.windKilometresPerHour.toFixed(1)} km/h`}.`;
+  const recent = outlook.recentRainfall;
+  const recentText = recent
+    ? ` The most recent ${recent.sampledDays}-day record totals ${recent.totalMillimetres.toFixed(1)} mm across ${recent.rainyDays} rainy day${recent.rainyDays === 1 ? "" : "s"}.`
+    : "";
+  const climate = outlook.climatePattern;
+  const climateText = climate
+    ? ` ${climate.month} climate baseline: about ${climate.estimatedMonthlyPrecipitationMillimetres.toFixed(1)} mm for the month and ${climate.meanTemperatureCelsius.toFixed(1)}°C mean temperature.`
+    : "";
+  const answer = `${currentText} ${outlook.label}: ${outlook.totalMillimetres.toFixed(1)} mm is forecast from ${formatDate(outlook.startDate)} to ${formatDate(outlook.endDate)}, with a ${outlook.peakDailyMillimetres.toFixed(1)} mm/day peak and ${outlook.peakProbability}% maximum precipitation probability.${recentText}${climateText} ${outlook.caveat}`;
+  const calculations: ConversationCalculation[] = [{
     label: "Seven-day forecast rainfall total",
     value: `${outlook.totalMillimetres.toFixed(1)} mm`,
-    method: "Sum of the provider's daily forecast precipitation values for the returned seven-day window.",
+    method: "Sum of returned daily precipitation values for the forecast window.",
     state: "reported",
-  }], [...weatherSources(outlook), ...catalogueSources(context)], generatedAt);
+  }];
+  if (recent) {
+    calculations.push({
+      label: "Recent rainfall pattern",
+      value: `${recent.totalMillimetres.toFixed(1)} mm / ${recent.sampledDays} days`,
+      method: "Sum of returned daily precipitation values for the recent record.",
+      state: "reported",
+    });
+  }
+  if (climate) {
+    calculations.push({
+      label: `${climate.month} climate baseline`,
+      value: `${climate.estimatedMonthlyPrecipitationMillimetres.toFixed(1)} mm/month`,
+      method: `${climate.baseline}; daily climatological precipitation multiplied by days in the current month.`,
+      state: "reported",
+    });
+  }
+  return makeTurn(question, "weather", "evidence-bounded", answer, context, calculations, [...weatherSources(outlook), ...catalogueSources(context)], generatedAt);
 }
 
 function replyForTimeline(question: string, context: ConversationContext, generatedAt: string) {

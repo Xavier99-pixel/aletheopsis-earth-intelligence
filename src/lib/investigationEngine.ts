@@ -68,6 +68,26 @@ export type InvestigationPlan = {
   steps: InvestigationStep[];
 };
 
+export type AnalysisModuleId = "measure" | "vegetation" | "change" | "flood" | "objects";
+
+export type AnalysisModuleState = "computed" | "ready-for-processing" | "awaiting-source" | "needs-authorised-imagery";
+
+/**
+ * Evidence-aware module metadata. A ready module is not a completed analysis:
+ * it means the catalogue supplied a plausible starting asset for a documented
+ * processing job.
+ */
+export type AnalysisModuleReadiness = {
+  id: AnalysisModuleId;
+  label: string;
+  state: AnalysisModuleState;
+  stateLabel: string;
+  output: string;
+  evidence: string;
+  method: string;
+  sourceSceneIds: string[];
+};
+
 export type InvestigationBrief = {
   question: string;
   naturalLanguageSummary: string;
@@ -77,6 +97,7 @@ export type InvestigationBrief = {
   measurements: BBoxGeodesicMeasurement;
   catalogue: CatalogueMetrics;
   plan: InvestigationPlan;
+  analysisReadiness: AnalysisModuleReadiness[];
   evidence: InvestigationEvidence[];
   caveats: string[];
   generatedAt: string;
@@ -371,6 +392,93 @@ function dateLabel(value: string | undefined) {
   }).format(new Date(milliseconds));
 }
 
+function latestSceneIds(scenes: readonly CatalogScene[], collection?: CatalogScene["collection"], maximum = 2) {
+  return sortScenesByNewest(scenes)
+    .filter((scene) => !collection || scene.collection === collection)
+    .slice(0, maximum)
+    .map((scene) => scene.id);
+}
+
+function readinessState(hasUsableSource: boolean): Pick<AnalysisModuleReadiness, "state" | "stateLabel"> {
+  return hasUsableSource
+    ? { state: "ready-for-processing", stateLabel: "Ready for processing" }
+    : { state: "awaiting-source", stateLabel: "Awaiting suitable source" };
+}
+
+/**
+ * Converts real catalogue metadata into honest module readiness records.
+ * These records intentionally never contain invented NDVI, flood-area, change
+ * area, or object-count values.
+ */
+function buildAnalysisReadiness(
+  measurements: BBoxGeodesicMeasurement,
+  metrics: CatalogueMetrics,
+  scenes: readonly CatalogScene[],
+): AnalysisModuleReadiness[] {
+  const opticalIds = latestSceneIds(scenes, "sentinel-2-l2a");
+  const sarIds = latestSceneIds(scenes, "sentinel-1-grd");
+  const anyIds = latestSceneIds(scenes);
+  const vegetationReady = opticalIds.length > 0;
+  const changeReady = scenes.length >= 2;
+  const floodReady = sarIds.length > 0;
+
+  return [
+    {
+      id: "measure",
+      label: "Measure",
+      state: "computed",
+      stateLabel: "Computed",
+      output: `${measurements.formattedArea} · ${measurements.formattedPerimeter}`,
+      evidence: "Current AOI bounding-box geometry",
+      method: measurements.method,
+      sourceSceneIds: [],
+    },
+    {
+      id: "vegetation",
+      label: "Vegetation",
+      ...readinessState(vegetationReady),
+      output: "NDVI / vegetation condition not computed",
+      evidence: vegetationReady
+        ? `${metrics.opticalScenes} optical scene${metrics.opticalScenes === 1 ? "" : "s"} catalogued${metrics.lowestOpticalCloudCover === undefined ? "" : `; lowest reported cloud metadata ${metrics.lowestOpticalCloudCover.toFixed(1)}%`}.`
+        : "No optical source scene is catalogued for the selected window.",
+      method: "Cloud-screened surface reflectance, B08/B04 index calculation, quality mask, and retained raster statistics.",
+      sourceSceneIds: opticalIds,
+    },
+    {
+      id: "change",
+      label: "Change",
+      ...readinessState(changeReady),
+      output: "Change area not computed",
+      evidence: changeReady
+        ? `${metrics.totalScenes} temporally distributed catalogue scene${metrics.totalScenes === 1 ? "" : "s"} can be reviewed for a comparable pair.`
+        : "At least two comparable acquisitions are required before change analysis.",
+      method: "Select comparable before/after acquisitions, co-register, normalise sensor inputs, calculate change, then validate the output geometry.",
+      sourceSceneIds: anyIds,
+    },
+    {
+      id: "flood",
+      label: "Flood extent",
+      ...readinessState(floodReady),
+      output: "Flood extent not computed",
+      evidence: floodReady
+        ? `${metrics.sarScenes} SAR scene${metrics.sarScenes === 1 ? "" : "s"} catalogued; SAR can support an all-weather water workflow after calibration and quality checks.`
+        : "No SAR source scene is catalogued for the selected window.",
+      method: "Calibrate SAR backscatter, apply documented water classification and terrain/layover checks, cross-check optical evidence where usable, then validate the polygon.",
+      sourceSceneIds: sarIds,
+    },
+    {
+      id: "objects",
+      label: "Objects",
+      state: "needs-authorised-imagery",
+      stateLabel: "Needs authorised high-resolution imagery",
+      output: "Object count not computed",
+      evidence: `The current catalogue contains ${metrics.totalScenes} Sentinel scene${metrics.totalScenes === 1 ? "" : "s"}; a specific object-count claim also needs task-suitable resolution and a validated segmentation model.`,
+      method: "Use authorised task-suitable imagery, a versioned segmentation model, confidence thresholds, manual review sampling, and retained output polygons.",
+      sourceSceneIds: anyIds,
+    },
+  ];
+}
+
 function buildEvidence(aoi: AreaOfInterest, measurements: BBoxGeodesicMeasurement, metrics: CatalogueMetrics, scenes: readonly CatalogScene[]): InvestigationEvidence[] {
   const evidence: InvestigationEvidence[] = [
     {
@@ -431,6 +539,7 @@ export function buildInvestigationBrief(
   const measurements = calculateBBoxGeodesics(request.aoi.bbox);
   const catalogue = deriveCatalogueMetrics(scenes, generatedAt);
   const plan = buildPlan({ ...request, question }, intents, scenes, measurements);
+  const analysisReadiness = buildAnalysisReadiness(measurements, catalogue, scenes);
   const intentSummary = intents.map(intentName).join(" and ");
   const catalogueSummary = catalogue.totalScenes > 0
     ? `${catalogue.totalScenes} source acquisition${catalogue.totalScenes === 1 ? " is" : "s are"} catalogued, including ${catalogue.opticalScenes} optical and ${catalogue.sarScenes} SAR scene${catalogue.sarScenes === 1 ? "" : "s"}.`
@@ -454,6 +563,7 @@ export function buildInvestigationBrief(
     measurements,
     catalogue,
     plan,
+    analysisReadiness,
     evidence: buildEvidence(request.aoi, measurements, catalogue, scenes),
     caveats,
     generatedAt: generatedAt.toISOString(),

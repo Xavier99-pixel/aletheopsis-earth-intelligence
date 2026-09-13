@@ -1,7 +1,7 @@
-import { AlertTriangle, CheckCircle2, Clock3, Database, ExternalLink, FileWarning, LoaderCircle, MapPinned, Radar, Ruler, ScanSearch, ShieldCheck, Siren, Waves } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock3, CloudSun, Database, Droplets, FileWarning, LoaderCircle, MapPinned, Radar, Ruler, ScanSearch, ShieldCheck, Siren, ThermometerSun, Waves, Wind } from "lucide-react";
 import type { InvestigationBrief } from "../lib/investigationEngine";
 import type { CatalogAssessment, CatalogScene, InvestigationRequest } from "../lib/types";
-import type { RainfallOutlook } from "../services/weather";
+import { isWeatherQuestion, type RainfallOutlook } from "../services/weather";
 import type { DisasterTimeline } from "../services/disasterTimeline";
 import type { SelectedWindowWeather } from "../services/weatherTimeline";
 import { ConversationPanel } from "./ConversationPanel";
@@ -37,6 +37,21 @@ function formatFreshness(hours?: number) {
   return `Acquired ${Math.round(hours / 24)} days ago`;
 }
 
+function formatWeatherDay(value: string) {
+  const date = new Date(`${value}T12:00:00Z`);
+  return Number.isNaN(date.valueOf())
+    ? value
+    : new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(date);
+}
+
+function weatherDirectAnswer(outlook: RainfallOutlook) {
+  const current = outlook.current;
+  const currentLine = current?.temperatureCelsius === undefined
+    ? "A live current-condition reading was not returned."
+    : `Current conditions are ${current.temperatureCelsius.toFixed(1)}°C and ${current.condition.toLowerCase()}${current.humidityPercent === undefined ? "" : `, with ${Math.round(current.humidityPercent)}% humidity`}.`;
+  return `${currentLine} ${outlook.detail} ${outlook.caveat}`;
+}
+
 function evidenceIcon(kind: InvestigationBrief["evidence"][number]["kind"]) {
   if (kind === "geometry") return <Ruler size={14} />;
   if (kind === "catalogue") return <Database size={14} />;
@@ -49,6 +64,14 @@ function stepIcon(state: InvestigationBrief["plan"]["steps"][number]["state"]) {
   if (state === "needs-imagery") return <ScanSearch size={14} />;
   if (state === "withheld") return <ShieldCheck size={14} />;
   return <Radar size={14} />;
+}
+
+function moduleIcon(id: InvestigationBrief["analysisReadiness"][number]["id"]) {
+  if (id === "measure") return <Ruler size={15} />;
+  if (id === "vegetation") return <Waves size={15} />;
+  if (id === "flood") return <Droplets size={15} />;
+  if (id === "objects") return <ScanSearch size={15} />;
+  return <Radar size={15} />;
 }
 
 export function AnalysisPanel({
@@ -97,6 +120,11 @@ export function AnalysisPanel({
 
   const quality = brief.catalogue.latestOpticalCloudCover;
   const outlookClass = rainfallOutlook ? `outlook-card--${rainfallOutlook.watchLevel}` : "outlook-card--withheld";
+  const weatherQuestion = isWeatherQuestion(request.question);
+  const directAnswer = weatherQuestion && rainfallOutlook ? weatherDirectAnswer(rainfallOutlook) : brief.descriptiveResponse;
+  const summary = weatherQuestion && rainfallOutlook
+    ? `Live atmospheric assessment prepared for ${request.aoi.name}. Satellite catalogue metadata remains available separately for the selected area and dates.`
+    : brief.naturalLanguageSummary;
   const reportTimeline = disasterTimeline ? {
     status: disasterTimeline.status,
     summary: disasterTimeline.summary,
@@ -112,11 +140,16 @@ export function AnalysisPanel({
     })),
     caveat: disasterTimeline.note,
   } : null;
-  const additionalSources = selectedWindowWeather ? [{
-    label: `${selectedWindowWeather.source} selected-window rainfall`,
-    url: "https://open-meteo.com/",
-    detail: `${selectedWindowWeather.label}: ${selectedWindowWeather.detail} ${selectedWindowWeather.caveat}`,
-  }] : [];
+  const additionalSources = [
+    ...(selectedWindowWeather ? [{
+      label: "Selected-window atmospheric record",
+      detail: `${selectedWindowWeather.label}: ${selectedWindowWeather.detail} ${selectedWindowWeather.caveat}`,
+    }] : []),
+    ...(rainfallOutlook ? rainfallOutlook.provenance.map((record) => ({
+      label: record.product,
+      detail: `${record.role}; retrieved ${formatRecordTime(record.retrievedAt)}.`,
+    })) : []),
+  ];
 
   return (
     <aside className="assessment-panel" aria-live="polite">
@@ -127,11 +160,11 @@ export function AnalysisPanel({
 
       <h2>Earth intelligence brief</h2>
       <p className="question-echo">“{brief.question}”</p>
-      <p className="assessment-summary">{brief.naturalLanguageSummary}</p>
+      <p className="assessment-summary">{summary}</p>
 
       <section className="assessment-section intelligence-answer">
         <span className="section-label">Direct answer</span>
-        <p>{brief.descriptiveResponse}</p>
+        <p>{directAnswer}</p>
       </section>
 
       <ConversationPanel
@@ -144,17 +177,37 @@ export function AnalysisPanel({
       />
 
       <section className="assessment-section">
-        <span className="section-label">Predictive screening</span>
+        <span className="section-label">Atmospheric outlook</span>
         {rainfallOutlook ? (
-          <div className={`outlook-card ${outlookClass}`}>
-            <div><Waves size={17} /><strong>{rainfallOutlook.label}</strong></div>
-            <span>{rainfallOutlook.detail}</span>
-            <small>Live weather context · {rainfallOutlook.source} · not a flood-extent prediction</small>
+          <div className={`outlook-card outlook-card--expanded ${outlookClass}`}>
+            <div className="outlook-card__title"><CloudSun size={17} /><strong>{rainfallOutlook.label}</strong><small>{rainfallOutlook.locationTimezone ?? "Local time"}</small></div>
+            <div className="atmospheric-current">
+              <div><ThermometerSun size={15} /><span>Now</span><strong>{rainfallOutlook.current?.temperatureCelsius === undefined ? "—" : `${rainfallOutlook.current.temperatureCelsius.toFixed(1)}°C`}</strong><small>{rainfallOutlook.current?.condition ?? "Current condition unavailable"}</small></div>
+              <div><Droplets size={15} /><span>Rain / 7 days</span><strong>{rainfallOutlook.totalMillimetres.toFixed(1)} mm</strong><small>{rainfallOutlook.peakProbability}% highest probability</small></div>
+              <div><Wind size={15} /><span>Wind now</span><strong>{rainfallOutlook.current?.windKilometresPerHour === undefined ? "—" : `${rainfallOutlook.current.windKilometresPerHour.toFixed(1)} km/h`}</strong><small>{rainfallOutlook.current?.humidityPercent === undefined ? "Humidity unavailable" : `${Math.round(rainfallOutlook.current.humidityPercent)}% humidity`}</small></div>
+            </div>
+            <div className="forecast-days" aria-label="Seven-day weather forecast">
+              {rainfallOutlook.dailyForecast.slice(0, 7).map((day) => (
+                <div className="forecast-day" key={day.date}>
+                  <span>{formatWeatherDay(day.date)}</span>
+                  <strong>{day.precipitationMillimetres.toFixed(1)} mm</strong>
+                  <small>{day.precipitationProbability}% · {day.condition}</small>
+                  {day.temperatureMinimumCelsius !== undefined && day.temperatureMaximumCelsius !== undefined && <em>{day.temperatureMinimumCelsius.toFixed(0)}–{day.temperatureMaximumCelsius.toFixed(0)}°</em>}
+                </div>
+              ))}
+            </div>
+            {(rainfallOutlook.recentRainfall || rainfallOutlook.climatePattern) && (
+              <div className="climate-pattern">
+                {rainfallOutlook.recentRainfall && <span><b>Recent {rainfallOutlook.recentRainfall.sampledDays}-day rainfall</b>{rainfallOutlook.recentRainfall.totalMillimetres.toFixed(1)} mm · {rainfallOutlook.recentRainfall.rainyDays} rainy days</span>}
+                {rainfallOutlook.climatePattern && <span><b>{rainfallOutlook.climatePattern.month} climate baseline</b>~{rainfallOutlook.climatePattern.estimatedMonthlyPrecipitationMillimetres.toFixed(1)} mm/month · {rainfallOutlook.climatePattern.meanTemperatureCelsius.toFixed(1)}°C mean</span>}
+              </div>
+            )}
+            <small className="outlook-card__caveat">{rainfallOutlook.caveat}</small>
           </div>
         ) : (
           <div className={outlookClass}>
-            <strong>Validated model not connected</strong>
-            <span>{brief.predictiveResponse}</span>
+            <strong>Atmospheric data temporarily unavailable</strong>
+            <span>The satellite catalogue review is available, but the current weather forecast did not return a usable location record. Re-run this investigation shortly.</span>
           </div>
         )}
       </section>
@@ -184,7 +237,6 @@ export function AnalysisPanel({
               </div>
               <div className="incident-row__meta">
                 <span>{event.category}</span>
-                {event.sourceUrl && <a href={event.sourceUrl} target="_blank" rel="noreferrer" aria-label={`Open source for ${event.title}`}><ExternalLink size={13} /></a>}
               </div>
             </div>
           ))}
@@ -206,6 +258,21 @@ export function AnalysisPanel({
         <div className="quality-summary">
           <div><span>Latest acquisition</span><strong>{result.title.replace("Latest acquisition: ", "")}</strong></div>
           <div><span>Optical cloud metadata</span><strong>{quality === undefined ? "Not returned" : `${quality.toFixed(1)}% cloud`}</strong></div>
+        </div>
+      </section>
+
+      <section className="assessment-section">
+        <span className="section-label">Evidence-led analysis modules</span>
+        <div className="analysis-module-grid">
+          {brief.analysisReadiness.map((module) => (
+            <article className={`analysis-module analysis-module--${module.state}`} key={module.id}>
+              <div className="analysis-module__heading">{moduleIcon(module.id)}<strong>{module.label}</strong><small>{module.stateLabel}</small></div>
+              <b>{module.output}</b>
+              <span>{module.evidence}</span>
+              {module.sourceSceneIds.length > 0 && <em>{module.sourceSceneIds.join(" · ")}</em>}
+              <p>{module.method}</p>
+            </article>
+          ))}
         </div>
       </section>
 
@@ -246,7 +313,6 @@ export function AnalysisPanel({
             <div className="acquisition-row__meta">
               {scene.cloudCover !== undefined && <span>{scene.cloudCover.toFixed(1)}% cloud</span>}
               {scene.polarizations.length > 0 && <span>{scene.polarizations.join("/")}</span>}
-              {scene.stacUrl && <a href={scene.stacUrl} target="_blank" rel="noreferrer" aria-label={`Open STAC item ${scene.id}`}><ExternalLink size={13} /></a>}
             </div>
           </div>
         ))}
