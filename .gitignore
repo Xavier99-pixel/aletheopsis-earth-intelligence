@@ -8,3 +8,9 @@ backend/**/__pycache__
 __pycache__
 *.tsbuildinfo
 .DS_Store
+data/
+backend/data/
+.pytest_cache/
+backend/.pytest_cache/
+test-results/
+playwright-report/

@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "check": "tsc -b --pretty false"
+    "check": "tsc -b --pretty false",
+    "test": "playwright test",
+    "test:backend": "backend/.venv/bin/python -m pytest -q"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.4",
@@ -17,6 +19,7 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/node": "^22.10.7",
     "@types/react": "^19.0.3",
     "@types/react-dom": "^19.0.2",

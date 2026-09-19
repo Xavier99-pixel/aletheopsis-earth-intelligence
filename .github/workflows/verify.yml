@@ -1,0 +1,40 @@
+name: Verify application
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgis:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_DB: aletheopsis_test
+          POSTGRES_USER: aletheopsis_test
+          POSTGRES_PASSWORD: disposable_ci_password
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U aletheopsis_test -d aletheopsis_test"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+      - run: python -m venv backend/.venv
+      - run: backend/.venv/bin/pip install -r backend/requirements-dev.txt
+      - run: npm run test:backend
+        env:
+          POSTGIS_TEST_URL: postgresql://aletheopsis_test:disposable_ci_password@localhost:5432/aletheopsis_test
+      - run: npx playwright install --with-deps chromium
+      - run: npm test

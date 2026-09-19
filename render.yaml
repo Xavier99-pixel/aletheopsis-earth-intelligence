@@ -20,6 +20,10 @@ services:
         sync: false
       - key: REDIS_URL
         sync: false
+      # Set this to an existing persistent-disk mount for durable research evidence.
+      # The default path works on an ephemeral filesystem but does not survive redeploys.
+      - key: ANALYSIS_DATA_DIR
+        value: ./data/analysis
       # Optional, authenticated hosted evidence synthesis. Keep all of these
       # server-side; INTELLIGENCE_ALLOW_UNAUTHENTICATED must stay unset in Render.
       - key: OPENAI_API_KEY

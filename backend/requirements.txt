@@ -1,3 +1,10 @@
 fastapi>=0.115,<1.0
 uvicorn[standard]>=0.30,<1.0
 httpx>=0.27,<1.0
+# Deterministic local GIS and satellite raster processing
+numpy>=2.1,<3
+shapely>=2.0,<3
+pyproj>=3.6,<4
+scipy>=1.14,<2
+rasterio>=1.4,<2
+psycopg[binary]>=3.2,<4

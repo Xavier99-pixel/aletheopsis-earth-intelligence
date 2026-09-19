@@ -1,6 +1,7 @@
 import asyncio
 import os
 import time
+from contextlib import asynccontextmanager
 from datetime import date
 from typing import Literal
 
@@ -11,6 +12,11 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field, model_validator
 
 from .intelligence import router as intelligence_router
+from .analysis import router as analysis_router
+from .land import router as land_router
+from .news import router as news_router
+from .analysis_store import recover_interrupted
+from .scientific_tools import router as scientific_router
 
 CDSE_STAC_SEARCH = "https://stac.dataspace.copernicus.eu/v1/search"
 CDSE_TOKEN_URL = "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
@@ -19,7 +25,13 @@ CDSE_PROCESS_URL = "https://sh.dataspace.copernicus.eu/process/v1"
 allowed_origins = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if origin.strip()]
 token_cache: dict[str, object] = {"access_token": None, "expires_at": 0.0}
 
-app = FastAPI(title="ALETHEOPSIS API", version="0.2.0")
+@asynccontextmanager
+async def lifespan(app):
+    recover_interrupted()
+    yield
+
+
+app = FastAPI(title="ALETHEOPSIS API", version="0.3.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
@@ -28,6 +40,10 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization"],
 )
 app.include_router(intelligence_router)
+app.include_router(analysis_router)
+app.include_router(land_router)
+app.include_router(news_router)
+app.include_router(scientific_router)
 
 
 class AreaOfInterest(BaseModel):

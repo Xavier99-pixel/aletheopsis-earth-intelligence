@@ -8,6 +8,7 @@ import {
   ColorMaterialProperty,
   ConstantProperty,
   GoogleMaps,
+  GeoJsonDataSource,
   ImageryLayer,
   Ion,
   LabelStyle,
@@ -21,6 +22,7 @@ import {
 } from "cesium";
 import { Crosshair, Home, Layers3, Minus, Plus, Satellite } from "lucide-react";
 import type { AreaOfInterest, CatalogScene } from "../lib/types";
+import type { MapLayer } from "../services/research";
 
 type CesiumGlobeProps = {
   variant?: "landing" | "workspace";
@@ -29,6 +31,8 @@ type CesiumGlobeProps = {
   photoRealistic?: boolean;
   onPhotoRealisticChange?: (value: boolean) => void;
   onAoiChange?: (aoi: AreaOfInterest) => void;
+  analysisLayers?: MapLayer[];
+  layerOpacity?: number;
 };
 
 const googleMapsKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
@@ -116,6 +120,8 @@ export function CesiumGlobe({
   photoRealistic = false,
   onPhotoRealisticChange,
   onAoiChange,
+  analysisLayers,
+  layerOpacity = 0.55,
 }: CesiumGlobeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Viewer | null>(null);
@@ -126,6 +132,7 @@ export function CesiumGlobe({
   const [webglReady, setWebglReady] = useState(true);
   const [viewerReady, setViewerReady] = useState(0);
   const [selectionMode, setSelectionMode] = useState(false);
+  const [layerError, setLayerError] = useState<string | null>(null);
   const canUseGoogleTiles = Boolean(googleMapsKey);
   const latestScene = scenes[0];
 
@@ -283,6 +290,33 @@ export function CesiumGlobe({
     viewer.scene.requestRender();
   }, [aoi, variant, viewerReady]);
 
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || variant !== "workspace") return;
+    let cancelled = false;
+    const sources: GeoJsonDataSource[] = [];
+    setLayerError(null);
+    void (async () => {
+      // Buffers draw first, with the observed water/edges visible above them.
+      const ordered = [...(analysisLayers ?? [])].sort((a, b) => Number(!a.id.startsWith("proximity")) - Number(!b.id.startsWith("proximity")));
+      for (const layer of ordered) {
+        try {
+          const colour = Color.fromCssColorString(layer.id.startsWith("proximity") ? "#f0c829" : layer.id.startsWith("lost") ? "#fa9b70" : layer.id.startsWith("gained") ? "#81d9a3" : layer.id.includes("edges") ? "#ffffff" : "#61c9ed");
+          const source = await GeoJsonDataSource.load(layer.geojson, { fill: colour.withAlpha(layerOpacity), stroke: colour, strokeWidth: 2, clampToGround: false });
+          if (cancelled || viewer.isDestroyed()) return;
+          source.name = layer.label;
+          await viewer.dataSources.add(source);
+          if (cancelled || viewer.isDestroyed()) { if (!viewer.isDestroyed()) viewer.dataSources.remove(source, true); return; }
+          sources.push(source);
+        } catch {
+          if (!cancelled) setLayerError("A result layer could not be displayed. Download its GeoJSON to inspect the geometry.");
+        }
+      }
+      if (!cancelled && !viewer.isDestroyed()) viewer.scene.requestRender();
+    })();
+    return () => { cancelled = true; if (!viewer.isDestroyed()) sources.forEach(source => viewer.dataSources.remove(source, true)); };
+  }, [analysisLayers, layerOpacity, variant, viewerReady]);
+
   if (variant === "landing") {
     return <div className="planet-stage" aria-label="Earth view"><div className="planet-stage__canvas" ref={containerRef} /></div>;
   }
@@ -341,6 +375,7 @@ export function CesiumGlobe({
         </div>
       </div>
       {selectionMode && <p className="globe-panel__selection-hint" role="status">Click the globe to create a focused analysis cell around that location.</p>}
+      {layerError && <p className="globe-panel__selection-hint" role="status">{layerError}</p>}
       {webglReady ? <div className="cesium-host" ref={containerRef} /> : (
         <div className="globe-fallback"><strong>3D map unavailable</strong><span>WebGL is required for the Earth view.</span></div>
       )}

@@ -1,5 +1,20 @@
 # ALETHEOPSIS (Α◉)
 
+## Auditable research and government upgrade
+
+The existing Earth workspace now also links to **River research** (`/research`) and a server-protected **Government land monitor** (`/admin`).
+
+- Real local-UTM area, observed water-edge length, supplied-centreline width sampling, dated water-footprint changes and 500 m / 1 km / custom distance screens.
+- An authenticated Sentinel-2 Process API pipeline with cloud/nodata masking, NDWI/MNDWI, Otsu classification, connected-component selection, source TIFF/mask retention and contributing-tile provenance. Requires server CDSE credentials; no pixels are invented from catalogue metadata.
+- Dated GeoJSON imports and clearly labelled synthetic examples, inspectable calculation equations/inputs, Cesium result layers, temporal area views and JSON/CSV/GeoJSON export.
+- Explicit-input volume, DEM-difference and DSAS-style transect-rate calculators. A channel volume or flood prediction is never inferred from a 2D water polygon alone.
+- Supabase-verified department roles, PostGIS parcel/authorization/observation imports, dated proximity checks, record-based status, potential-use review flags and audit logs.
+- Source-linked environment/urban/flood news discovery, with unavailable/empty-result states and official reference links.
+
+Start with [research deployment and the Krishna walkthrough](docs/RESEARCH_SETUP.md), [scientific methods and primary sources](docs/GIS_METHODS.md), and [government database/access setup](docs/GOVERNMENT.md).
+
+**Scope:** distance screens are not flood forecasts. HEC-RAS/ML forecasting, automatic bathymetry acquisition, SAR validation, automatic building segmentation and live official cadastral connectors are not implemented. Real imagery and government operations require the listed credentials/datasets. Research job storage needs a persistent disk for retention across Render redeploys. The original workspace described below remains available.
+
 ALETHEOPSIS is an Earth-observation workspace built around a 3D globe, real Copernicus catalogue metadata, source-aware investigation controls, and evidence-first assessment.
 
 ## What runs now

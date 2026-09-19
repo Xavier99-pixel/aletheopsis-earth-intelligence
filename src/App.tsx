@@ -13,6 +13,8 @@ import { AnalysisPanel } from "./components/AnalysisPanel";
 import { BrandMark } from "./components/BrandMark";
 import { CesiumGlobe } from "./components/CesiumGlobe";
 import { QueryComposer } from "./components/QueryComposer";
+import { RiverWorkspace } from "./components/RiverWorkspace";
+import { GovernmentPanel } from "./components/GovernmentPanel";
 
 const defaultAoi: AreaOfInterest = {
   name: "Hyderabad Basin",
@@ -35,6 +37,14 @@ export default function App() {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [photoRealistic, setPhotoRealistic] = useState(false);
+  const [page, setPage] = useState(window.location.pathname);
+
+  useEffect(() => {
+    const changed = () => setPage(window.location.pathname);
+    window.addEventListener("popstate", changed);
+    return () => window.removeEventListener("popstate", changed);
+  }, []);
+  function navigate(path: string) { window.history.pushState({}, "", path); setPage(path); }
 
   useEffect(() => {
     let active = true;
@@ -108,6 +118,11 @@ export default function App() {
     <div className="app-shell">
       <header className="topbar">
         <BrandMark compact />
+        <nav className="workspace-nav" aria-label="Workspace sections">
+          <button className={page !== "/research" && page !== "/admin" ? "active" : ""} onClick={() => navigate("/")}>Earth workspace</button>
+          <button className={page === "/research" ? "active" : ""} onClick={() => navigate("/research")}>River research</button>
+          <button className={page === "/admin" ? "active" : ""} onClick={() => navigate("/admin")}>Government</button>
+        </nav>
         <div className="topbar__system">
           <span><i className="system-dot" /> Earth workspace</span>
           <span><ShieldCheck size={14} /> {identity.role}</span>
@@ -118,7 +133,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="command-surface">
+      {page === "/research" ? <RiverWorkspace aoi={aoi} onAoiChange={updateAoi} /> : page === "/admin" ? <GovernmentPanel onClose={() => navigate("/")} /> : <main className="command-surface">
         <QueryComposer aoi={aoi} onRun={runInvestigation} onAoiChange={updateAoi} running={running} suggestedQuestion={suggestedQuestion} />
         <div className="earth-stage">
           <CesiumGlobe
@@ -140,7 +155,7 @@ export default function App() {
           running={running}
           error={error}
         />
-      </main>
+      </main>}
     </div>
   );
 }
