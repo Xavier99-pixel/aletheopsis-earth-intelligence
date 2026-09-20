@@ -44,3 +44,17 @@ for (const width of [1440,1024,390,320]) {
   expect(errors).toEqual([]);
  });
 }
+
+test('original Earth workspace gives mobile map usable height and supports coordinates', async ({page})=>{
+ await page.setViewportSize({width:390,height:844});
+ await page.goto('/');
+ await page.getByRole('button',{name:'Open demonstration workspace'}).click();
+ const canvas=page.getByTestId('earth-canvas');
+ await expect(canvas.locator('canvas')).toBeVisible();
+ expect((await canvas.boundingBox())!.height).toBeGreaterThan(300);
+ await page.locator('.map-workspace__footer summary').click();
+ await page.getByLabel('Latitude, longitude',{exact:true}).fill('16.50, 80.62');
+ await page.getByRole('button',{name:'Go to coordinates',exact:true}).click();
+ await expect(page.locator('.map-workspace__header strong')).toContainText('16.50000, 80.62000');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(391);
+});

@@ -36,7 +36,7 @@ body { overflow-x:clip; }
  .research-calculators input,.research-calculators select,.research-calculators textarea,
  .government-panel input,.government-panel select,.government-panel textarea,
  .access-card input,.access-card select { font-size:16px; }
- .earth-stage { order:-1; min-height:560px; }
+ .earth-stage { order:-1; height:560px; min-height:560px; flex:none; }
  .command-surface { display:flex; flex-direction:column; overflow:visible; }
  .investigation-panel,.assessment-panel { overflow:visible; }
  .research-dates { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
