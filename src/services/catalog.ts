@@ -78,6 +78,7 @@ async function requestPublicStac(sensor: SensorId, request: InvestigationRequest
     sortby: [{ field: "datetime", direction: "desc" }],
   };
 
+  if (request.aoi.geometry) { delete body.bbox; body.intersects = request.aoi.geometry; }
   if (collection === "sentinel-2-l2a") {
     body.query = { "eo:cloud_cover": { lt: 100 } };
   }

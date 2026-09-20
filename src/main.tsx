@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import "./styles.css";
 import App from "./App";
+import "./styles/responsive.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

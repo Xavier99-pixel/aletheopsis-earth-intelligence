@@ -26,10 +26,13 @@ export type ToolId = (typeof GIS_TOOLS)[number]["id"];
 
 export type BBox = [number, number, number, number];
 
+export type PolygonGeometry = { type: "Polygon"; coordinates: number[][][] };
+
 export type AreaOfInterest = {
   name: string;
   bbox: BBox;
   source: "preset" | "map";
+  geometry?: PolygonGeometry;
 };
 
 export type CatalogScene = {

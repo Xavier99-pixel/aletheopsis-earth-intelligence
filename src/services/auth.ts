@@ -141,3 +141,18 @@ export async function sendMagicLink(email: string, role: Role) {
   if (error) throw error;
   return { mode: "authenticated" as const };
 }
+
+export async function signInWithPassword(email: string, password: string): Promise<Identity> {
+  if (!supabase) throw new Error("Authentication is not configured.");
+  const { data, error } = await supabase.auth.signInWithPassword({email, password});
+  if (error || !data.user) throw new Error("Sign-in failed. Check your email and password.");
+  saveRole("Government official");
+  finishAuthentication();
+  return identityFromUser(data.user);
+}
+
+export async function signOut() {
+  if (supabase) { const {error} = await supabase.auth.signOut(); if (error) throw error; }
+  window.sessionStorage.removeItem(authenticatedWindowStorageKey);
+  clearOAuthIntent();
+}

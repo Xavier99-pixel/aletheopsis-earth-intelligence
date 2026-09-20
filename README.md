@@ -1,5 +1,11 @@
 # ALETHEOPSIS (Α◉)
 
+## Map selection and administrator access
+
+The globe supports place search, point selection, exact polygon drawing with Undo/Finish, coordinate entry, GeoJSON export and an expanded map view. Mobile layouts show the map first; research and admin pages scroll on desktop.
+
+For one-time government admin creation using backend Render environment variables, follow [ADMIN_SETUP.md](docs/ADMIN_SETUP.md). No admin password or service key is shipped with this project.
+
 ## Auditable research and government upgrade
 
 The existing Earth workspace now also links to **River research** (`/research`) and a server-protected **Government land monitor** (`/admin`).

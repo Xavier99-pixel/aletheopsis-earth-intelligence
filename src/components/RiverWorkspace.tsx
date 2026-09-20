@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownToLine, ArrowRight, Calculator, Check, Database, FlaskConical, Layers, LoaderCircle, MapPin, Waves } from "lucide-react";
 import type { AreaOfInterest } from "../lib/types";
 import { downloadContent, downloadEvidence, researchRequest, type Calculation, type ResearchPlan, type ResearchRun } from "../services/research";
@@ -49,7 +49,8 @@ export function RiverWorkspace({ aoi, onAoiChange }: {aoi: AreaOfInterest; onAoi
   const abort = useRef<AbortController | null>(null);
   const result = run?.result;
   const metric = result?.calculations.find(item => item.id === selected) ?? result?.calculations[0];
-  const aoiKey = aoi.bbox.join(",");
+  const aoiKey = JSON.stringify([aoi.bbox, aoi.geometry]);
+  const visibleLayers = useMemo(() => result?.layers.filter(layer => visible.includes(layer.id)), [result, visible]);
 
   useEffect(() => { void researchRequest<typeof capabilities>("/api/analysis/capabilities").then(setCapabilities).catch(() => setCapabilities(null)); }, []);
   useEffect(() => {
@@ -130,7 +131,7 @@ export function RiverWorkspace({ aoi, onAoiChange }: {aoi: AreaOfInterest; onAoi
         {plan && <details className="research-plan"><summary>Approved analysis plan</summary><ol>{plan.steps.map(step => <li key={step}>{step}</li>)}</ol></details>}
       </aside>
       <section className="research-center">
-        <div className="research-map"><CesiumGlobe aoi={aoi} onAoiChange={onAoiChange} analysisLayers={result?.layers.filter(layer => visible.includes(layer.id))} layerOpacity={opacity} /></div>
+        <div className="research-map"><CesiumGlobe aoi={aoi} onAoiChange={onAoiChange} analysisLayers={visibleLayers} layerOpacity={opacity} /></div>
         {busy && <div className="research-progress" role="status">{states.map((state, i) => <span key={state} className={i <= states.indexOf(run?.status ?? "QUEUED") ? "active" : ""}>{i < states.indexOf(run?.status ?? "QUEUED") ? <Check size={12} /> : <i />}{state.replaceAll("_", " ").toLowerCase()}</span>)}</div>}
         {result ? <>
           <div className="research-result-bar"><div><span className="section-label">{result.source_mode === "sample" ? "EXAMPLE · synthetic data" : "Derived measurements"}</span><h2>Calculation results</h2></div><div className="research-downloads"><button onClick={() => downloadContent(`aletheopsis-${run?.id}.json`, JSON.stringify(result, null, 2))}><ArrowDownToLine size={13} /> Report JSON</button><button onClick={exportMetrics}>CSV</button><button onClick={() => downloadContent(`aletheopsis-${run?.id}.geojson`, JSON.stringify({ type: "FeatureCollection", features: result.layers.flatMap(layer => (layer.geojson.features as Record<string, unknown>[]).map(feature => ({ ...feature, properties: { ...(feature.properties as object), layer: layer.label, evidence_level: layer.evidence_level } }))) }, null, 2))}>GeoJSON</button></div></div>

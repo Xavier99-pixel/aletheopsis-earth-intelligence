@@ -6,6 +6,7 @@ import {
   Cartographic,
   Color,
   ColorMaterialProperty,
+  Cesium3DTileset,
   ConstantProperty,
   GoogleMaps,
   GeoJsonDataSource,
@@ -20,9 +21,12 @@ import {
   Viewer,
   createGooglePhotorealistic3DTileset,
 } from "cesium";
-import { Crosshair, Home, Layers3, Minus, Plus, Satellite } from "lucide-react";
+import { Crosshair, Home, Layers3, Minus, Plus, Maximize2, Minimize2, Pentagon, Undo2, X, Check } from "lucide-react";
 import type { AreaOfInterest, CatalogScene } from "../lib/types";
-import type { MapLayer } from "../services/research";
+import { downloadContent, type MapLayer } from "../services/research";
+import { LocationSearch } from "./LocationSearch";
+import { polygonAoi, locationAoi, type MapPoint } from "../lib/mapSelection";
+import "../styles/map.css";
 
 type CesiumGlobeProps = {
   variant?: "landing" | "workspace";
@@ -49,38 +53,19 @@ function centreOf(aoi: AreaOfInterest) {
 }
 
 function polygonDegrees(aoi: AreaOfInterest) {
+  if (aoi.geometry) return aoi.geometry.coordinates[0].flat();
   const [west, south, east, north] = aoi.bbox;
   return [west, south, east, south, east, north, west, north, west, south];
 }
 
 function aoiKey(aoi: AreaOfInterest) {
-  return `${aoi.name}:${aoi.bbox.join(",")}`;
-}
-
-function clamp(value: number, lower: number, upper: number) {
-  return Math.max(lower, Math.min(upper, value));
-}
-
-function pointAoi(latitude: number, longitude: number): AreaOfInterest {
-  // Roughly 7.8 km across at the equator: small enough for a focused inquiry
-  // while still being a valid, queryable STAC bounding box.
-  const halfSide = 0.035;
-  return {
-    name: `Globe selection · ${latitude.toFixed(4)}°, ${longitude.toFixed(4)}°`,
-    bbox: [
-      clamp(longitude - halfSide, -180, 180),
-      clamp(latitude - halfSide, -89.95, 89.95),
-      clamp(longitude + halfSide, -180, 180),
-      clamp(latitude + halfSide, -89.95, 89.95),
-    ],
-    source: "map",
-  };
+  return JSON.stringify([aoi.name, aoi.bbox, aoi.geometry]);
 }
 
 function cameraHeightFor(aoi: AreaOfInterest) {
   const [west, south, east, north] = aoi.bbox;
-  const widestSide = Math.max(Math.abs(east - west), Math.abs(north - south), 0.03);
-  return Math.min(1_600_000, Math.max(40_000, widestSide * 111_000 * 3.2));
+  const widestSide = Math.max(Math.abs(east - west), Math.abs(north - south), 0.001);
+  return Math.min(1_600_000, Math.max(600, widestSide * 111_000 * 2.2));
 }
 
 function cameraViewFor(aoi: AreaOfInterest) {
@@ -88,8 +73,8 @@ function cameraViewFor(aoi: AreaOfInterest) {
   return {
     destination: Cartesian3.fromDegrees(longitude, latitude, cameraHeightFor(aoi)),
     orientation: {
-      heading: CesiumMath.toRadians(14),
-      pitch: CesiumMath.toRadians(-72),
+      heading: 0,
+      pitch: CesiumMath.toRadians(-90),
       roll: 0,
     },
   };
@@ -103,20 +88,10 @@ function flyToAoi(viewer: Viewer, aoi: AreaOfInterest, duration = 0.85) {
   });
 }
 
-function formatAcquisition(scene?: CatalogScene) {
-  if (!scene) return "No acquisition selected";
-  const date = new Date(scene.datetime);
-  return Number.isNaN(date.valueOf())
-    ? scene.datetime
-    : new Intl.DateTimeFormat("en-GB", {
-        day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "UTC", timeZoneName: "short",
-      }).format(date);
-}
-
 export function CesiumGlobe({
   variant = "workspace",
   aoi = fallbackAoi,
-  scenes = [],
+  scenes: _scenes = [],
   photoRealistic = false,
   onPhotoRealisticChange,
   onAoiChange,
@@ -127,14 +102,21 @@ export function CesiumGlobe({
   const viewerRef = useRef<Viewer | null>(null);
   const onAoiChangeRef = useRef(onAoiChange);
   const aoiRef = useRef(aoi);
-  const selectionModeRef = useRef(false);
+  const selectionModeRef = useRef<"browse" | "point" | "polygon">("browse");
   const lastAoiKeyRef = useRef<string | null>(null);
   const [webglReady, setWebglReady] = useState(true);
   const [viewerReady, setViewerReady] = useState(0);
-  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectionMode, setSelectionMode] = useState<"browse" | "point" | "polygon">("browse");
+  const [vertices, setVertices] = useState<MapPoint[]>([]);
+  const [selectionError, setSelectionError] = useState("");
+  const [expanded, setExpanded] = useState(false);
+  const [coordinates, setCoordinates] = useState("");
+  const [halfWidth, setHalfWidth] = useState(1000);
+  const halfWidthRef = useRef(halfWidth);
+  halfWidthRef.current = halfWidth;
   const [layerError, setLayerError] = useState<string | null>(null);
   const canUseGoogleTiles = Boolean(googleMapsKey);
-  const latestScene = scenes[0];
+
 
   useEffect(() => {
     onAoiChangeRef.current = onAoiChange;
@@ -147,7 +129,9 @@ export function CesiumGlobe({
   useEffect(() => {
     selectionModeRef.current = selectionMode;
     const canvas = viewerRef.current?.scene.canvas;
-    if (canvas) canvas.style.cursor = selectionMode ? "crosshair" : "grab";
+    if (canvas) canvas.style.cursor = selectionMode !== "browse" ? "crosshair" : "grab";
+    const viewer = viewerRef.current;
+    if (viewer) viewer.scene.screenSpaceCameraController.enableRotate = selectionMode !== "polygon";
   }, [selectionMode, viewerReady]);
 
   useEffect(() => {
@@ -177,7 +161,7 @@ export function CesiumGlobe({
         viewerRef.current = viewer;
         setViewerReady((value) => value + 1);
         viewer.scene.backgroundColor = Color.BLACK;
-        viewer.scene.globe.enableLighting = variant === "workspace";
+        viewer.scene.globe.enableLighting = false;
         viewer.scene.globe.baseColor = Color.fromCssColorString("#1b3850");
         viewer.scene.globe.depthTestAgainstTerrain = false;
         viewer.scene.fog.enabled = variant === "workspace";
@@ -185,7 +169,7 @@ export function CesiumGlobe({
 
         const controller = viewer.scene.screenSpaceCameraController;
         controller.enableCollisionDetection = true;
-        controller.minimumZoomDistance = 500;
+        controller.minimumZoomDistance = 25;
         controller.maximumZoomDistance = 22_000_000;
         controller.inertiaSpin = 0;
         controller.inertiaTranslate = 0;
@@ -205,9 +189,10 @@ export function CesiumGlobe({
           const initialAoi = aoiRef.current;
           viewer.camera.setView(cameraViewFor(initialAoi));
           lastAoiKeyRef.current = aoiKey(initialAoi);
+          viewer.screenSpaceEventHandler.removeInputAction(ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
           pointerHandler = new ScreenSpaceEventHandler(viewer.scene.canvas);
           pointerHandler.setInputAction((event: { position: Cartesian2 }) => {
-            if (!selectionModeRef.current) return;
+            if (selectionModeRef.current === "browse") return;
             const ray = viewer?.camera.getPickRay(event.position);
             // Prefer the rendered globe surface so clicking over terrain stays
             // geographically stable; retain the ellipsoid as a safe fallback.
@@ -218,20 +203,19 @@ export function CesiumGlobe({
             const coordinate = Cartographic.fromCartesian(cartesian);
             const longitude = CesiumMath.toDegrees(coordinate.longitude);
             const latitude = CesiumMath.toDegrees(coordinate.latitude);
-            onAoiChangeRef.current?.(pointAoi(latitude, longitude));
-            selectionModeRef.current = false;
-            setSelectionMode(false);
+            setSelectionError("");
+            if (selectionModeRef.current === "polygon") {
+              setVertices(points => points.length < 200 ? [...points, [longitude, latitude]] : points);
+            } else {
+              try {
+                onAoiChangeRef.current?.(locationAoi(latitude, longitude, halfWidthRef.current));
+                selectionModeRef.current = "browse";
+                setSelectionMode("browse");
+              } catch (error) { setSelectionError((error as Error).message); }
+            }
           }, ScreenSpaceEventType.LEFT_CLICK);
         }
 
-        if (photoRealistic && googleMapsKey && variant === "workspace") {
-          GoogleMaps.defaultApiKey = googleMapsKey;
-          const tileset = await createGooglePhotorealistic3DTileset(
-            { key: googleMapsKey },
-            { showCreditsOnScreen: true },
-          );
-          if (!cancelled) viewer.scene.primitives.add(tileset);
-        }
       } catch {
         if (!cancelled) setWebglReady(false);
       }
@@ -244,7 +228,47 @@ export function CesiumGlobe({
       if (viewer && !viewer.isDestroyed()) viewer.destroy();
       viewerRef.current = null;
     };
-  }, [variant, photoRealistic]);
+  }, [variant]);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || variant !== "workspace" || !photoRealistic || !googleMapsKey) return;
+    let cancelled = false;
+    let tiles: Cesium3DTileset | undefined;
+    GoogleMaps.defaultApiKey = googleMapsKey;
+    void createGooglePhotorealistic3DTileset({key: googleMapsKey}, {showCreditsOnScreen:true}).then(value => {
+      if (cancelled || viewer.isDestroyed()) { value.destroy(); return; }
+      tiles = value; viewer.scene.primitives.add(value);
+    }).catch(() => { if (!cancelled) setSelectionError("3D context could not load. The base map is still available."); });
+    return () => { cancelled = true; if (tiles && !viewer.isDestroyed()) viewer.scene.primitives.remove(tiles); };
+  }, [viewerReady, variant, photoRealistic]);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || !containerRef.current) return;
+    const observer = new ResizeObserver(() => { if (!viewer.isDestroyed()) { viewer.resize(); viewer.scene.requestRender(); } });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [viewerReady]);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer) return;
+    const draft = viewer.entities.values.filter(entity => entity.id.startsWith("draw-"));
+    draft.forEach(entity => viewer.entities.remove(entity));
+    vertices.forEach((point,i) => viewer.entities.add({id:`draw-${i}`, position:Cartesian3.fromDegrees(...point),
+      point:{pixelSize:11,color:Color.YELLOW,outlineColor:Color.BLACK,outlineWidth:2,disableDepthTestDistance:Number.POSITIVE_INFINITY}}));
+    if (vertices.length > 1) viewer.entities.add({id:"draw-line",polyline:{positions:Cartesian3.fromDegreesArray((vertices.length>2 ? [...vertices,vertices[0]]:vertices).flat()),width:3,material:Color.YELLOW}});
+    viewer.scene.requestRender();
+  }, [vertices, viewerReady]);
+
+  useEffect(() => {
+    function escape(event:KeyboardEvent) {
+      if (event.key === "Escape") { setSelectionMode("browse"); setVertices([]); setExpanded(false); setSelectionError(""); }
+    }
+    window.addEventListener("keydown",escape);
+    return () => window.removeEventListener("keydown",escape);
+  }, []);
 
   useEffect(() => {
     const viewer = viewerRef.current;
@@ -330,55 +354,66 @@ export function CesiumGlobe({
     const viewer = viewerRef.current;
     if (!viewer) return;
     viewer.camera.cancelFlight();
-    const distance = Math.max(1_000, viewer.camera.positionCartographic.height * 0.28);
+    const distance = Math.max(10, viewer.camera.positionCartographic.height * 0.28);
     if (direction === "in") viewer.camera.zoomIn(distance);
     else viewer.camera.zoomOut(distance);
   };
 
+  function mode(next: "browse" | "point" | "polygon") {
+    setSelectionError(""); setVertices([]); setSelectionMode(next);
+    selectionModeRef.current = next;
+  }
+  function finishPolygon() {
+    try { const selected = polygonAoi(vertices); onAoiChange?.(selected); mode("browse"); }
+    catch(error) { setSelectionError((error as Error).message); }
+  }
+  function useCoordinates(event:React.FormEvent) {
+    event.preventDefault();
+    const parts = coordinates.split(",").map(value=>value.trim());
+    try {
+      if(parts.length!==2 || parts.some(value=>!value)) throw new Error("Enter latitude, longitude, for example 16.50, 80.62.");
+      onAoiChange?.(locationAoi(Number(parts[0]), Number(parts[1]), halfWidth)); mode("browse");
+    } catch(error) { setSelectionError((error as Error).message); }
+  }
   return (
-    <section className="globe-panel" aria-label="Earth observation map">
-      <div className="globe-panel__toolbar">
-        <div className="map-source">
-          <span className="map-source__eyebrow">Area of interest</span>
-          <strong>{aoi.name}</strong>
-          <small>{aoi.source === "map" ? "Globe-selected analysis cell" : "Preset operating area"}</small>
-        </div>
-        <div className="globe-panel__actions">
-          <span className="map-metadata"><Satellite size={14} /> {formatAcquisition(latestScene)}</span>
-          <button
-            type="button"
-            className={`map-action ${selectionMode ? "is-active" : ""}`}
-            onClick={() => setSelectionMode((active) => !active)}
-            aria-pressed={selectionMode}
-            title="Click anywhere on the globe to create a focused analysis area"
-          >
-            <Crosshair size={15} /> {selectionMode ? "Click globe to set AOI" : "Select on globe"}
-          </button>
-          <button type="button" className="map-action" onClick={resetView} title="Return to the selected area" aria-label="Reset map view">
-            <Home size={15} /> Reset view
-          </button>
-          <button type="button" className="map-action" onClick={() => zoom("in")} title="Zoom in" aria-label="Zoom in">
-            <Plus size={15} />
-          </button>
-          <button type="button" className="map-action" onClick={() => zoom("out")} title="Zoom out" aria-label="Zoom out">
-            <Minus size={15} />
-          </button>
-          <button
-            type="button"
-            className={`map-action ${photoRealistic ? "is-active" : ""}`}
-            onClick={() => onPhotoRealisticChange?.(!photoRealistic)}
-            disabled={!canUseGoogleTiles}
-            title={canUseGoogleTiles ? "Toggle licensed Google 3D context" : "Add a restricted Google Maps key to enable 3D context"}
-          >
-            <Layers3 size={15} /> {canUseGoogleTiles ? "3D context" : "3D context unavailable"}
-          </button>
-        </div>
+    <section className={`globe-panel map-workspace ${expanded ? "map-workspace--expanded" : ""}`} aria-label="Earth observation map">
+      <div className="map-workspace__header">
+        <div><span className="eyebrow">Explore Earth</span><strong title={aoi.name}>{aoi.name}</strong></div>
+        <button type="button" className="map-action" onClick={()=>setExpanded(value=>!value)} aria-label={expanded ? "Close expanded map" : "Expand map"}>{expanded ? <Minimize2 size={17}/> : <Maximize2 size={17}/>}</button>
       </div>
-      {selectionMode && <p className="globe-panel__selection-hint" role="status">Click the globe to create a focused analysis cell around that location.</p>}
-      {layerError && <p className="globe-panel__selection-hint" role="status">{layerError}</p>}
-      {webglReady ? <div className="cesium-host" ref={containerRef} /> : (
-        <div className="globe-fallback"><strong>3D map unavailable</strong><span>WebGL is required for the Earth view.</span></div>
-      )}
+      <div className="map-workspace__search"><LocationSearch label="Search the map" placeholder="City, river or place…" onSelect={value=>{onAoiChange?.(value);mode("browse");}} /></div>
+      <div className="map-workspace__tools" role="group" aria-label="Map selection tools">
+        <button className="map-action" aria-pressed={selectionMode==="browse"} onClick={()=>mode("browse")}>Explore</button>
+        <button className="map-action" aria-pressed={selectionMode==="point"} onClick={()=>mode("point")}><Crosshair size={16}/> Select location</button>
+        <button className="map-action" aria-pressed={selectionMode==="polygon"} onClick={()=>mode("polygon")}><Pentagon size={16}/> Draw polygon</button>
+      </div>
+      <div className="map-workspace__viewport">
+        {webglReady ? <div className="cesium-host" data-testid="earth-canvas" ref={containerRef} /> : <div className="globe-fallback"><strong>3D map unavailable</strong><span>Enable WebGL, or use place search and coordinates above.</span></div>}
+        <div className="map-workspace__navigation" aria-label="Map navigation">
+          <button className="map-action" onClick={resetView} aria-label="Reset map view" title="Fit selection · north up"><Home size={18}/></button>
+          <button className="map-action" onClick={()=>zoom("in")} aria-label="Zoom in"><Plus size={18}/></button>
+          <button className="map-action" onClick={()=>zoom("out")} aria-label="Zoom out"><Minus size={18}/></button>
+          {canUseGoogleTiles && onPhotoRealisticChange && <button className="map-action" aria-label="Toggle 3D context" aria-pressed={photoRealistic} onClick={()=>onPhotoRealisticChange(!photoRealistic)}><Layers3 size={18}/></button>}
+        </div>
+        {selectionMode!=="browse" && <div className="map-workspace__hint" role="status">{selectionMode==="polygon" ? `Tap corners on the map · ${vertices.length}/200 corners` : "Tap a location to select a square study area."}</div>}
+      </div>
+      <div className="map-workspace__footer">
+        {selectionMode==="polygon" ? <div className="map-workspace__draw-actions">
+          <button className="map-action" onClick={()=>{setVertices(points=>points.slice(0,-1));setSelectionError("");}} disabled={!vertices.length}><Undo2 size={16}/> Undo</button>
+          <button className="map-action" onClick={()=>mode("browse")}><X size={16}/> Cancel</button>
+          <button className="map-action" onClick={finishPolygon} disabled={vertices.length<3}><Check size={16}/> Finish polygon</button>
+        </div> : <details><summary>Coordinates &amp; selection</summary>
+          <form onSubmit={useCoordinates} className="map-coordinate-form">
+            <label>Latitude, longitude<input aria-label="Latitude, longitude" value={coordinates} onChange={event=>setCoordinates(event.target.value)} placeholder="16.50, 80.62" /></label>
+            <label>Square half-width<select aria-label="Selection half-width" value={halfWidth} onChange={event=>setHalfWidth(Number(event.target.value))}><option value={500}>500 m</option><option value={1000}>1 km</option><option value={2000}>2 km</option><option value={5000}>5 km</option></select></label>
+            <button className="map-action" type="submit">Go to coordinates</button>
+          </form>
+          <p>Lat {centreOf(aoi)[1].toFixed(5)}°, lon {centreOf(aoi)[0].toFixed(5)}° · {aoi.geometry ? "Exact polygon boundary" : "Bounding rectangle"}</p>
+          <button className="map-action" onClick={()=>downloadContent("selected-area.geojson",JSON.stringify({type:"Feature",properties:{name:aoi.name},geometry:aoi.geometry ?? {type:"Polygon",coordinates:[Array.from({length:5},(_,i)=>polygonDegrees(aoi).slice(i*2,i*2+2))]}},null,2),"application/geo+json")}>Export selection</button>
+        </details>}
+        {selectionError && <p className="map-workspace__error" role="alert">{selectionError}</p>}
+        {layerError && <p className="map-workspace__error" role="status">{layerError}</p>}
+      </div>
     </section>
   );
 }

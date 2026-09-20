@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Bell, CircleUserRound, ShieldCheck } from "lucide-react";
 import { buildCatalogAssessment } from "./lib/assessment";
 import { buildInvestigationBrief, type InvestigationBrief } from "./lib/investigationEngine";
 import type { AreaOfInterest, CatalogAssessment, Identity, InvestigationRequest } from "./lib/types";
 import { searchLiveCatalogue } from "./services/catalog";
-import { finishAuthentication, getAuthenticatedIdentity, onAuthIdentityChange } from "./services/auth";
+import { finishAuthentication, getAuthenticatedIdentity, onAuthIdentityChange, signOut } from "./services/auth";
 import { isWeatherQuestion, loadRainfallOutlook, type RainfallOutlook } from "./services/weather";
 import { loadDisasterTimeline, type DisasterTimeline } from "./services/disasterTimeline";
 import { loadSelectedWindowWeather, type SelectedWindowWeather } from "./services/weatherTimeline";
@@ -44,7 +44,7 @@ export default function App() {
     window.addEventListener("popstate", changed);
     return () => window.removeEventListener("popstate", changed);
   }, []);
-  function navigate(path: string) { window.history.pushState({}, "", path); setPage(path); }
+  function navigate(path: string) { window.history.pushState({}, "", path); setPage(path); window.scrollTo(0, 0); }
 
   useEffect(() => {
     let active = true;
@@ -55,6 +55,7 @@ export default function App() {
       }
     });
     const unsubscribe = onAuthIdentityChange((authenticatedIdentity) => {
+      if (active && !authenticatedIdentity) setIdentity(null);
       if (active && authenticatedIdentity) {
         setIdentity(authenticatedIdentity);
         finishAuthentication();
@@ -66,7 +67,9 @@ export default function App() {
     };
   }, []);
 
+  const investigationGeneration = useRef(0);
   async function runInvestigation(request: InvestigationRequest) {
+    const generation = ++investigationGeneration.current;
     setRunning(true);
     setError(null);
     try {
@@ -82,6 +85,7 @@ export default function App() {
           : Promise.resolve(null),
         disasterMode ? loadDisasterTimeline(request.aoi, request.startDate, request.endDate) : Promise.resolve(null),
       ]);
+      if (generation !== investigationGeneration.current) return;
       setResult(buildCatalogAssessment(request, catalogue));
       setBrief(buildInvestigationBrief(request, catalogue.items));
       setRainfallOutlook(rainfall);
@@ -89,6 +93,7 @@ export default function App() {
       setDisasterTimeline(timeline);
       setLastRequest(request);
     } catch (reason) {
+      if (generation !== investigationGeneration.current) return;
       setResult(null);
       setBrief(null);
       setRainfallOutlook(null);
@@ -97,11 +102,13 @@ export default function App() {
       setLastRequest(null);
       setError(reason instanceof Error ? reason.message : "The catalogue could not be reached. Check the network connection and try again.");
     } finally {
-      setRunning(false);
+      if (generation === investigationGeneration.current) setRunning(false);
     }
   }
 
   function updateAoi(nextAoi: AreaOfInterest) {
+    investigationGeneration.current++;
+    setRunning(false);
     setAoi(nextAoi);
     setResult(null);
     setBrief(null);
@@ -115,7 +122,7 @@ export default function App() {
   if (!identity) return <AccessGate onAuthenticated={setIdentity} />;
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${page === "/research" || page === "/admin" ? "app-shell--document" : "app-shell--earth"}`}>
       <header className="topbar">
         <BrandMark compact />
         <nav className="workspace-nav" aria-label="Workspace sections">
@@ -128,6 +135,7 @@ export default function App() {
           <span><ShieldCheck size={14} /> {identity.role}</span>
         </div>
         <div className="topbar__account">
+          <button className="map-action" onClick={() => { void signOut().then(() => { updateAoi(aoi); setIdentity(null); }).catch(() => window.alert("Sign-out failed. Please retry.")); }}>Sign out</button>
           <button className="icon-button" type="button" aria-label="Notifications"><Bell size={17} /></button>
           <span className="account-chip"><CircleUserRound size={16} /> {identity.email}</span>
         </div>

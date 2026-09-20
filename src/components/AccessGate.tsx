@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { ArrowRight, Chrome, LoaderCircle, Mail, ShieldCheck } from "lucide-react";
-import { authConfigured, sendMagicLink, signInWithGoogle } from "../services/auth";
+import { authConfigured, sendMagicLink, signInWithGoogle, signInWithPassword } from "../services/auth";
 import type { Identity, Role } from "../lib/types";
 import { ROLES } from "../lib/types";
 import { BrandMark } from "./BrandMark";
@@ -12,8 +12,10 @@ type AccessGateProps = {
 
 export function AccessGate({ onAuthenticated }: AccessGateProps) {
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [adminEmail, setAdminEmail] = useState("");
   const [role, setRole] = useState<Role>("Researcher");
-  const [busy, setBusy] = useState<"google" | "email" | null>(null);
+  const [busy, setBusy] = useState<"google" | "email" | "password" | null>(null);
   const [message, setMessage] = useState("");
 
   async function enterWithGoogle() {
@@ -52,6 +54,13 @@ export function AccessGate({ onAuthenticated }: AccessGateProps) {
     } finally {
       setBusy(null);
     }
+  }
+
+  async function enterAdmin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setBusy("password"); setMessage("");
+    try { onAuthenticated(await signInWithPassword(adminEmail.trim(), password)); setPassword(""); }
+    catch { setMessage("Admin sign-in failed. Check your email and password. Government permissions must be provisioned by your administrator."); }
+    finally { setBusy(null); }
   }
 
   return (
@@ -102,6 +111,14 @@ export function AccessGate({ onAuthenticated }: AccessGateProps) {
           </form>
         </>}
 
+        {authConfigured && <details className="admin-login"><summary>Admin sign in</summary>
+          <p>Use your provisioned government account. Department access is checked by the server.</p>
+          <form onSubmit={enterAdmin}>
+            <label>Admin email<input type="email" autoComplete="username" required value={adminEmail} onChange={event=>setAdminEmail(event.target.value)}/></label>
+            <label>Password<input type="password" autoComplete="current-password" required value={password} onChange={event=>setPassword(event.target.value)}/></label>
+            <button type="submit" className="primary-button" disabled={busy!==null}>{busy==="password" ? "Signing in…" : "Sign in as administrator"}</button>
+          </form>
+        </details>}
         {message && <p className="access-message" role="status">{message}</p>}
         {!authConfigured && (
           <p className="access-disclosure">

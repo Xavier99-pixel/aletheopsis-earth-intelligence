@@ -1,0 +1,35 @@
+.map-workspace.globe-panel { display:flex; flex-direction:column; min-width:0; overflow:hidden; background:#101611; }
+.map-workspace__header { display:flex; justify-content:space-between; align-items:center; gap:.7rem; padding:.7rem .8rem .3rem; }
+.map-workspace__header > div { min-width:0; display:grid; gap:.3rem; }
+.map-workspace__header strong { font-size:.83rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.map-workspace__search { padding:0 .8rem; z-index:5; }
+.map-workspace__search .location-search { margin:0; }
+.map-workspace__search .field-label { display:none; }
+.map-workspace__tools { display:flex; gap:.35rem; padding:.45rem .8rem; flex-wrap:wrap; }
+.map-workspace .map-action { display:inline-flex; align-items:center; justify-content:center; gap:.35rem; min-height:44px; min-width:44px; padding:.45rem .6rem; font-size:.72rem; border:1px solid #424c39; border-radius:7px; background:#172018; color:#e2e8d8; cursor:pointer; }
+.map-workspace .map-action[aria-pressed=true] { background:#d8c365; color:#13180d; border-color:#d8c365; }
+.map-workspace .map-action:disabled { opacity:.45; cursor:default; }
+.map-workspace__viewport { position:relative; flex:1; min-height:160px; overflow:hidden; }
+.map-workspace__viewport .cesium-host { height:100%; width:100%; position:absolute; inset:0; }
+.map-workspace__navigation { position:absolute; right:.7rem; top:.7rem; display:grid; gap:.3rem; }
+.map-workspace__hint { position:absolute; bottom:30px; left:.6rem; right:4rem; padding:.6rem; border-radius:6px; background:#0b1510ed; color:#f3e7aa; font-size:.73rem; pointer-events:none; }
+.map-workspace__footer { padding:.4rem .8rem; font-size:.72rem; color:#b7c4ad; max-height:40%; overflow:auto; }
+.map-workspace__footer summary { cursor:pointer; padding:.5rem 0; }
+.map-workspace__draw-actions { display:flex; gap:.4rem; flex-wrap:wrap; }
+.map-workspace__error { color:#ffd3b9; line-height:1.5; margin:.5rem 0; }
+.map-coordinate-form { display:flex; gap:.5rem; align-items:end; flex-wrap:wrap; padding:.5rem 0; }
+.map-coordinate-form label { display:grid; gap:.4rem; flex:1; min-width:120px; }
+.map-coordinate-form input,.map-coordinate-form select { width:100%; min-width:0; min-height:44px; background:#0a110b; color:#f4f5e9; border:1px solid #46513f; border-radius:5px; padding:.45rem; }
+.map-workspace--expanded.globe-panel { position:fixed; inset:0; z-index:100; height:100dvh!important; width:100vw; border-radius:0; }
+.map-workspace--expanded .map-workspace__search { max-width:650px; width:100%; }
+.map-workspace :focus-visible { outline:2px solid #f1d77c; outline-offset:2px; }
+.cesium-host .cesium-viewer-bottom { display:block!important; max-width:calc(100% - 12px); background:#101511bb; }
+.cesium-host .cesium-credit-logoContainer { display:inline-block!important; }
+@media(max-width:600px) {
+ .map-workspace__header { padding:.5rem .55rem .25rem; }
+ .map-workspace__search { padding:0 .55rem; }
+ .map-workspace__tools { padding:.35rem .55rem; gap:.25rem; }
+ .map-workspace .map-action { font-size:.68rem; padding:.35rem .45rem; }
+ .map-workspace__footer { padding:.3rem .55rem; }
+ .map-workspace input,.map-workspace select { font-size:16px; }
+}

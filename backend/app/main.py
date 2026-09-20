@@ -12,10 +12,11 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field, model_validator
 
 from .intelligence import router as intelligence_router
-from .analysis import router as analysis_router
+from .analysis import AOI, router as analysis_router
 from .land import router as land_router
 from .news import router as news_router
 from .analysis_store import recover_interrupted
+from .admin_bootstrap import bootstrap_on_startup
 from .scientific_tools import router as scientific_router
 
 CDSE_STAC_SEARCH = "https://stac.dataspace.copernicus.eu/v1/search"
@@ -28,10 +29,11 @@ token_cache: dict[str, object] = {"access_token": None, "expires_at": 0.0}
 @asynccontextmanager
 async def lifespan(app):
     recover_interrupted()
+    await bootstrap_on_startup()
     yield
 
 
-app = FastAPI(title="ALETHEOPSIS API", version="0.3.0", lifespan=lifespan)
+app = FastAPI(title="ALETHEOPSIS API", version="0.4.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
@@ -50,12 +52,15 @@ class AreaOfInterest(BaseModel):
     name: str = Field(min_length=1, max_length=180)
     bbox: list[float] = Field(min_length=4, max_length=4)
     source: Literal["preset", "map"]
+    geometry: dict | None = None
 
     @model_validator(mode="after")
     def validate_bbox(self):
         west, south, east, north = self.bbox
         if not (-180 <= west < east <= 180 and -90 <= south < north <= 90):
             raise ValueError("bbox must be [west, south, east, north] in WGS84 degrees")
+        if self.geometry:
+            AOI(name=self.name, bbox=self.bbox, source=self.source, geometry=self.geometry)
         return self
 
 
@@ -114,6 +119,9 @@ async def catalogue_search(client: httpx.AsyncClient, request: CatalogSearchRequ
         "limit": 8,
         "sortby": [{"field": "datetime", "direction": "desc"}],
     }
+    if request.aoi.geometry:
+        payload.pop("bbox")
+        payload["intersects"] = request.aoi.geometry
     if collection == "sentinel-2-l2a":
         payload["query"] = {"eo:cloud_cover": {"lt": 100}}
     response = await client.post(CDSE_STAC_SEARCH, json=payload)
@@ -182,6 +190,7 @@ function evaluatePixel(s) { return [2.5 * s.B04, 2.5 * s.B03, 2.5 * s.B02]; }"""
 async def health():
     return {
         "status": "ok",
+        "version": "0.4.0",
         "catalogue": "public-stac",
         "imageryProcessing": bool(os.getenv("CDSE_CLIENT_ID") and os.getenv("CDSE_CLIENT_SECRET")),
         "hostedIntelligence": bool(

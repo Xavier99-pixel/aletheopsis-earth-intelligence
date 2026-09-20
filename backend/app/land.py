@@ -301,7 +301,7 @@ async def session(official: Official = Depends(verified_official)):
     def run():
         with connection(official) as conn:
             audit(conn, official, 'session_verified', {})
-        return {'department_id': official.department_id, 'role': official.role,
+        return {'user_id': official.user_id, 'department_id': official.department_id, 'role': official.role,
                 'can_import': official.role in EDIT_ROLES, 'can_observe': official.role in OBSERVATION_ROLES}
     return await run_in_threadpool(run)
 

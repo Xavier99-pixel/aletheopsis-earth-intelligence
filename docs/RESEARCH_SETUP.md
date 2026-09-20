@@ -91,3 +91,15 @@ The empty coordinate arrays above are **schema placeholders and will be rejected
 | `GET /api/news/geospatial?query=Vijayawada&category=flood` | Source-linked discovery or explicit unavailable/no-results state |
 
 The `/api/gis/calculate` envelope is `{operation,source,parameters,is_sample}`. Supported operation names and keyword parameters are defined in `scientific_tools.py` and `gis_engine.py`; the UI examples provide complete executable input examples. No automatic ML/hydraulic forecasts, SAR verification, bathymetry acquisition, building segmentation or official cadastral connector is included. See [GIS_METHODS.md](GIS_METHODS.md) for formulas, primary references and precise limitations.
+
+## Map selection and responsive workspace
+
+Use **Search the map** to find a place, **Select location** to tap a square study area, or **Draw polygon** to outline a custom study boundary. Polygon mode accepts 3–200 corners; pan/zoom to your area first, then tap corners, Undo as needed and Finish. Cancel preserves the previous selection. Research AOIs must fit within 0.8 degrees per side, between 80°S and 84°N. Self-intersecting polygons are rejected. The backend independently validates the closed WGS84 geometry and its bounds.
+
+**Coordinates & selection** supports latitude, longitude entry, square half-width selection (500 m–5 km) and GeoJSON export. These squares are study windows, not flood zones. Expand the map for more drawing space, and use Reset to fit the area north-up. The exact polygon is sent to catalogue intersections, satellite processing and deterministic GIS clipping; its bounding box remains a convenience for discovery/grid dimensions. Satellite pixel masks exclude the polygon's exterior. Weather products remain point/grid estimates rather than polygon-integrated measurements.
+
+The renderer is CesiumJS; this is an independently implemented map interaction, not an embedded Google Earth feature. OpenStreetMap/Cesium attribution remains visible. Optional licensed Google 3D context requires the existing restricted Google Maps key. Toggling it no longer recreates the map or loses selection; failure retains the base map.
+
+Desktop research/admin routes scroll normally; narrower screens put the map first and retain touch-sized controls. The login card can scroll on short screens.
+
+For government account creation using Render environment variables, see [ADMIN_SETUP.md](ADMIN_SETUP.md).

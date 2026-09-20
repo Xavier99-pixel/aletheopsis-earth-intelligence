@@ -46,11 +46,15 @@ function updateOutputMetadata(scenes, inputMetadata, outputMetadata) {
 """
 
 
-async def discover_day(client, bbox, target: date, window: int):
+async def discover_day(client, bbox, target: date, window: int, geometry=None):
     start, end = target-timedelta(days=window), min(date.today(), target+timedelta(days=window))
-    response = await client.post(STAC, json={"collections": ["sentinel-2-l2a"], "bbox": bbox,
+    payload = {"collections": ["sentinel-2-l2a"], "bbox": bbox,
         "datetime": f"{start}T00:00:00Z/{end}T23:59:59Z", "limit": 100,
-        "sortby": [{"field": "datetime", "direction": "asc"}]})
+        "sortby": [{"field": "datetime", "direction": "asc"}]}
+    if geometry:
+        payload.pop("bbox")
+        payload["intersects"] = geometry
+    response = await client.post(STAC, json=payload)
     response.raise_for_status()
     items = response.json().get("features", [])
     candidates = []
@@ -160,7 +164,7 @@ def process_raster(raw: bytes, metadata: dict, aoi: dict, seed: list[float] | No
 async def acquire_observations(request, run_id):
     from .main import cdse_access_token
     token = await cdse_access_token()
-    aoi = mapping(box(*request.aoi.bbox))
+    aoi = request.aoi.geometry or mapping(box(*request.aoi.bbox))
     projected, _, _, epsg = project_local(aoi)
     minx, miny, maxx, maxy = projected.bounds
     resolution = max(20, math.ceil(max(maxx-minx, maxy-miny)/512))
@@ -172,7 +176,7 @@ async def acquire_observations(request, run_id):
     async with httpx.AsyncClient(timeout=90, follow_redirects=False) as client:
         for label, target in [("A", request.start_date), ("B", request.end_date)]:
             update_run(run_id, "FETCHING_DATA")
-            acquired, candidates, truncated = await discover_day(client, request.aoi.bbox, target, request.search_days)
+            acquired, candidates, truncated = await discover_day(client, request.aoi.bbox, target, request.search_days, request.aoi.geometry)
             if observations and str(acquired) <= observations[-1]["date"]:
                 raise ValueError("Both date windows selected the same or reversed acquisitions. Separate Date A and Date B or reduce the search tolerance.")
             payload = {"input": {"bounds": {"bbox": bounds,

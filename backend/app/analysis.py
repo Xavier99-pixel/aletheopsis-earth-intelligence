@@ -14,7 +14,7 @@ from fastapi import APIRouter, BackgroundTasks, Header, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pyproj import Transformer
-from shapely.geometry import LineString, box, mapping
+from shapely.geometry import LineString, Point, box, mapping, shape
 from shapely.ops import transform
 
 from . import analysis_store as store
@@ -25,7 +25,7 @@ from .land import BoundedLandRoute
 router = APIRouter(prefix="/api/analysis", tags=["Auditable GIS"], route_class=BoundedLandRoute)
 worker_slots = asyncio.Semaphore(2)
 limiter = SlidingWindowLimiter(8)
-ALGORITHM = "aletheopsis-research-1.0.0"
+ALGORITHM = "aletheopsis-research-1.1.0"
 
 
 class AOI(BaseModel):
@@ -33,12 +33,19 @@ class AOI(BaseModel):
     name: str = Field(min_length=1, max_length=180)
     bbox: list[float] = Field(min_length=4, max_length=4)
     source: Literal["map", "preset"] = "map"
+    geometry: dict | None = None
 
     @model_validator(mode="after")
     def valid_bounds(self):
         w, s, e, n = self.bbox
         if not (-180 <= w < e <= 180 and -80 <= s < n <= 84) or e-w > 0.8 or n-s > 0.8:
             raise ValueError("Select a local AOI smaller than 0.8 degrees per side, between 80°S and 84°N.")
+        if self.geometry is not None:
+            polygon = validate_wgs84_geometry(self.geometry, ("Polygon",))
+            if len(polygon.interiors) or len(polygon.exterior.coords) > 201:
+                raise ValueError("Use one polygon without holes and at most 200 corners.")
+            if any(abs(a-b) > 1e-7 for a,b in zip(polygon.bounds, self.bbox)):
+                raise ValueError("Polygon bounds must match the AOI bounding box.")
         return self
 
 
@@ -71,7 +78,7 @@ class RiverRequest(BaseModel):
         if self.water_seed is not None:
             x, y = self.water_seed
             w, s, e, n = self.aoi.bbox
-            if not (w <= x <= e and s <= y <= n):
+            if not (w <= x <= e and s <= y <= n) or (self.aoi.geometry and not shape(self.aoi.geometry).covers(Point(x, y))):
                 raise ValueError("River seed must lie inside the selected AOI.")
         if self.centerline:
             validate_wgs84_geometry(self.centerline, ("LineString",))
@@ -124,6 +131,9 @@ def sample_inputs(request: RiverRequest):
     """Illustrative metric geometry, deliberately unrelated to the actual river."""
     w, s, e, n = request.aoi.bbox
     lon, lat = (w+e)/2, (s+n)/2
+    if request.aoi.geometry:
+        interior = shape(request.aoi.geometry).representative_point()
+        lon, lat = interior.x, interior.y
     epsg = (32600 if lat >= 0 else 32700) + min(60, int((lon+180)//6)+1)
     forward = Transformer.from_crs(4326, epsg, always_xy=True).transform
     backward = Transformer.from_crs(epsg, 4326, always_xy=True).transform
@@ -170,7 +180,7 @@ async def execute(run_id: str, request: RiverRequest):
                 from .satellite import acquire_observations
                 observations, evidence = await acquire_observations(request, run_id)
             store.update_run(run_id, "ANALYSING")
-            result = await asyncio.to_thread(analyse_river, observations, mapping(box(*request.aoi.bbox)),
+            result = await asyncio.to_thread(analyse_river, observations, request.aoi.geometry or mapping(box(*request.aoi.bbox)),
                                              sorted(set([500, 1000, request.buffer_m])), centerline, request.transect_spacing_m)
             store.update_run(run_id, "GENERATING_OUTPUT")
             result["analysis_id"] = run_id
