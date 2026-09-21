@@ -6,7 +6,8 @@ export default defineConfig({
   fullyParallel: false,
   reporter: process.env.CI ? [["list"], ["github"]] : "list",
   workers: 1,
-  timeout: 60000,
+  // Hosted Linux runners render the full-size Cesium globe in software.
+  timeout: process.env.CI ? 120000 : 60000,
   use: { baseURL: "http://127.0.0.1:4175", viewport: {width:1440,height:1000}, screenshot:"only-on-failure", trace:"retain-on-failure" },
   webServer: [
     {command:"backend/.venv/bin/uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8005",url:"http://127.0.0.1:8005/api/health",reuseExistingServer:false,

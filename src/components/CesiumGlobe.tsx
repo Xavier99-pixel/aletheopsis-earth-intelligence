@@ -156,6 +156,8 @@ export function CesiumGlobe({
           selectionIndicator: false,
           timeline: false,
           shouldAnimate: false,
+          requestRenderMode: true,
+          maximumRenderTimeChange: Number.POSITIVE_INFINITY,
         });
         if (cancelled) return;
         viewerRef.current = viewer;
