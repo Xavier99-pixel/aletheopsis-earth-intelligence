@@ -13,7 +13,8 @@ export default defineConfig({
         { src: `${cesiumSource}/ThirdParty`, dest: cesiumBaseUrl },
         { src: `${cesiumSource}/Workers`, dest: cesiumBaseUrl },
         { src: `${cesiumSource}/Assets`, dest: cesiumBaseUrl },
-        { src: `${cesiumSource}/Widgets`, dest: cesiumBaseUrl }
+        { src: `${cesiumSource}/Widgets`, dest: cesiumBaseUrl },
+        { src: "node_modules/cesium/LICENSE.md", dest: "licenses", rename: "CesiumJS-LICENSE.txt" }
       ]
     })
   ],

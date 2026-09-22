@@ -13,6 +13,6 @@ export default defineConfig({
     {command:"backend/.venv/bin/uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8005",url:"http://127.0.0.1:8005/api/health",reuseExistingServer:false,
       env:{ANALYSIS_DATA_DIR:resolve("../../work/browser-analysis"),ALLOWED_ORIGINS:"http://127.0.0.1:4175",SUPABASE_URL:"",SUPABASE_ANON_KEY:"",CDSE_CLIENT_ID:"",CDSE_CLIENT_SECRET:"",INTELLIGENCE_ALLOW_UNAUTHENTICATED:"false"}},
     {command:"npm run dev -- --host 127.0.0.1 --port 4175 --strictPort",url:"http://127.0.0.1:4175",reuseExistingServer:false,
-      env:{VITE_BACKEND_BASE_URL:"http://127.0.0.1:8005",VITE_SUPABASE_URL:"",VITE_SUPABASE_ANON_KEY:""}}
+      env:{VITE_BACKEND_BASE_URL:"http://127.0.0.1:8005",VITE_SUPABASE_URL:"",VITE_SUPABASE_ANON_KEY:"",VITE_GOOGLE_MAPS_API_KEY:"local-failure-test-key"}}
   ],
 });

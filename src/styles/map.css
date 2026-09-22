@@ -33,3 +33,10 @@
  .map-workspace__footer { padding:.3rem .55rem; }
  .map-workspace input,.map-workspace select { font-size:16px; }
 }
+/* Keep provider attribution readable without the default engine branding. */
+.cesium-host .cesium-viewer-bottom { padding:2px 5px; font-size:10px; line-height:1.4; border-radius:3px; width:fit-content; }
+.cesium-host .cesium-credit-logoContainer:empty { display:none!important; }
+.planet-stage__canvas .cesium-viewer-bottom { display:block!important; background:#101511bb; padding:2px 5px; font-size:10px; }
+.cesium-host--paused { visibility:hidden; }
+.map-recovery { position:absolute; inset:0; z-index:8; display:flex; align-items:center; justify-content:center; flex-direction:column; padding:1.3rem; background:#101a13; color:#e6eddf; text-align:center; }
+.map-recovery p { max-width:30rem; font-size:.8rem; line-height:1.7; color:#b9c9b0; }

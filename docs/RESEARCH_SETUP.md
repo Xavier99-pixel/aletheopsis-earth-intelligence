@@ -103,3 +103,9 @@ The renderer is CesiumJS; this is an independently implemented map interaction, 
 Desktop research/admin routes scroll normally; narrower screens put the map first and retain touch-sized controls. The login card can scroll on short screens.
 
 For government account creation using Render environment variables, see [ADMIN_SETUP.md](ADMIN_SETUP.md).
+
+### Map reliability and branding
+
+The base globe uses the bundled open-source CesiumJS renderer, OpenStreetMap imagery and an ellipsoid terrain model. It does not call Cesium ion; `VITE_CESIUM_ION_TOKEN` is not needed or used by this viewer. The optional Google layer calls Google directly. The default ion promotional logo is removed using `CreditDisplay.cesiumCredit`; provider attribution remains visible. The shipped renderer license is available at `/licenses/CesiumJS-LICENSE.txt`. See the [public credit API](https://cesium.com/learn/cesiumjs/ref-doc/CreditDisplay.html) and [Cesium's explanation for non-ion applications](https://community.cesium.com/t/remove-cesiumion-logo/25502).
+
+A failed optional Google layer does not replace the base map with a WebGL error. Genuine initialization or graphics-context failures show **Retry map** while retaining the AOI and search controls. The old toolbar labelled “Select on globe” is from an earlier release; reload an existing browser tab to load the current “Select location / Draw polygon” controls.

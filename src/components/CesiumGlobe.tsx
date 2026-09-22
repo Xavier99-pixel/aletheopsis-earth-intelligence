@@ -8,6 +8,8 @@ import {
   ColorMaterialProperty,
   Cesium3DTileset,
   ConstantProperty,
+  Credit,
+  CreditDisplay,
   GoogleMaps,
   GeoJsonDataSource,
   ImageryLayer,
@@ -40,7 +42,13 @@ type CesiumGlobeProps = {
 };
 
 const googleMapsKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-const cesiumToken = import.meta.env.VITE_CESIUM_ION_TOKEN;
+// This viewer uses local CesiumJS assets, OSM imagery and optional direct Google
+// tiles, not ion services. Remove only the default logo via the public API.
+// Provider credits remain visible; ion credits would be restored by Cesium if
+// an ion-backed data source were added in the future.
+CreditDisplay.cesiumCredit = new Credit("");
+Ion.defaultAccessToken = "";
+const osmCredit = new Credit('<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">&copy; OpenStreetMap contributors</a>', true);
 const fallbackAoi: AreaOfInterest = {
   name: "Hyderabad Basin",
   bbox: [78.30, 17.32, 78.47, 17.49],
@@ -104,7 +112,8 @@ export function CesiumGlobe({
   const aoiRef = useRef(aoi);
   const selectionModeRef = useRef<"browse" | "point" | "polygon">("browse");
   const lastAoiKeyRef = useRef<string | null>(null);
-  const [webglReady, setWebglReady] = useState(true);
+  const [mapError, setMapError] = useState<string | null>(null);
+  const [mapRevision, setMapRevision] = useState(0);
   const [viewerReady, setViewerReady] = useState(0);
   const [selectionMode, setSelectionMode] = useState<"browse" | "point" | "polygon">("browse");
   const [vertices, setVertices] = useState<MapPoint[]>([]);
@@ -136,15 +145,24 @@ export function CesiumGlobe({
 
   useEffect(() => {
     if (!containerRef.current) return;
+    const host = containerRef.current;
     let cancelled = false;
     let viewer: Viewer | null = null;
     let pointerHandler: ScreenSpaceEventHandler | null = null;
+    let removeRenderError: (() => void) | undefined;
+    let canvas: HTMLCanvasElement | undefined;
+    function contextLost(event: Event) {
+      event.preventDefault();
+      if (!cancelled) setMapError("The graphics connection was interrupted. Retry the map; your selected area is saved.");
+    }
+    function contextRestored() { if (!cancelled) setMapRevision(value => value + 1); }
+    setMapError(null);
 
     async function initialise() {
       try {
-        if (cesiumToken) Ion.defaultAccessToken = cesiumToken;
-        viewer = new Viewer(containerRef.current!, {
-          baseLayer: new ImageryLayer(new OpenStreetMapImageryProvider({ url: "https://tile.openstreetmap.org/" })),
+        viewer = new Viewer(host, {
+          baseLayer: new ImageryLayer(new OpenStreetMapImageryProvider({ url: "https://tile.openstreetmap.org/", credit: osmCredit })),
+          showRenderLoopErrors: false,
           animation: false,
           baseLayerPicker: false,
           fullscreenButton: false,
@@ -161,7 +179,12 @@ export function CesiumGlobe({
         });
         if (cancelled) return;
         viewerRef.current = viewer;
-        setViewerReady((value) => value + 1);
+        canvas = viewer.scene.canvas;
+        canvas.addEventListener("webglcontextlost", contextLost);
+        canvas.addEventListener("webglcontextrestored", contextRestored);
+        removeRenderError = viewer.scene.renderError.addEventListener(() => {
+          if (!cancelled) setMapError("Map rendering paused. Retry to restore the view; place search and your selected area are preserved.");
+        });
         viewer.scene.backgroundColor = Color.BLACK;
         viewer.scene.globe.enableLighting = false;
         viewer.scene.globe.baseColor = Color.fromCssColorString("#1b3850");
@@ -218,8 +241,18 @@ export function CesiumGlobe({
           }, ScreenSpaceEventType.LEFT_CLICK);
         }
 
+        setViewerReady((value) => value + 1);
       } catch {
-        if (!cancelled) setWebglReady(false);
+        pointerHandler?.destroy(); pointerHandler = null;
+        removeRenderError?.(); removeRenderError = undefined;
+        canvas?.removeEventListener("webglcontextlost", contextLost);
+        canvas?.removeEventListener("webglcontextrestored", contextRestored);
+        if (viewer && !viewer.isDestroyed()) viewer.destroy();
+        viewer = null; viewerRef.current = null;
+        // A constructor that throws can leave canvas/credit nodes before a
+        // Viewer instance exists to destroy. Keep retries free of stale nodes.
+        host.replaceChildren();
+        if (!cancelled) setMapError("The map could not start. Retry, or enable graphics acceleration in your browser. Place search and coordinates remain available.");
       }
     }
 
@@ -227,10 +260,14 @@ export function CesiumGlobe({
     return () => {
       cancelled = true;
       pointerHandler?.destroy();
+      removeRenderError?.();
+      canvas?.removeEventListener("webglcontextlost", contextLost);
+      canvas?.removeEventListener("webglcontextrestored", contextRestored);
       if (viewer && !viewer.isDestroyed()) viewer.destroy();
       viewerRef.current = null;
+      host.replaceChildren();
     };
-  }, [variant]);
+  }, [variant, mapRevision]);
 
   useEffect(() => {
     const viewer = viewerRef.current;
@@ -241,7 +278,12 @@ export function CesiumGlobe({
     void createGooglePhotorealistic3DTileset({key: googleMapsKey}, {showCreditsOnScreen:true}).then(value => {
       if (cancelled || viewer.isDestroyed()) { value.destroy(); return; }
       tiles = value; viewer.scene.primitives.add(value);
-    }).catch(() => { if (!cancelled) setSelectionError("3D context could not load. The base map is still available."); });
+    }).catch(() => {
+      if (!cancelled) {
+        setSelectionError("Google 3D context could not load. The base globe is still available. Check the Google Maps key, billing and allowed website in your provider settings.");
+        onPhotoRealisticChange?.(false);
+      }
+    });
     return () => { cancelled = true; if (tiles && !viewer.isDestroyed()) viewer.scene.primitives.remove(tiles); };
   }, [viewerReady, variant, photoRealistic]);
 
@@ -390,14 +432,15 @@ export function CesiumGlobe({
         <button className="map-action" aria-pressed={selectionMode==="polygon"} onClick={()=>mode("polygon")}><Pentagon size={16}/> Draw polygon</button>
       </div>
       <div className="map-workspace__viewport">
-        {webglReady ? <div className="cesium-host" data-testid="earth-canvas" ref={containerRef} /> : <div className="globe-fallback"><strong>3D map unavailable</strong><span>Enable WebGL, or use place search and coordinates above.</span></div>}
+        <div className={`cesium-host ${mapError ? "cesium-host--paused" : ""}`} data-testid="earth-canvas" aria-hidden={Boolean(mapError)} ref={containerRef} />
+        {mapError && <div className="map-recovery" role="alert"><strong>Restore map view</strong><p>{mapError}</p><button className="map-action" onClick={() => setMapRevision(value => value + 1)}>Retry map</button></div>}
         <div className="map-workspace__navigation" aria-label="Map navigation">
           <button className="map-action" onClick={resetView} aria-label="Reset map view" title="Fit selection · north up"><Home size={18}/></button>
           <button className="map-action" onClick={()=>zoom("in")} aria-label="Zoom in"><Plus size={18}/></button>
           <button className="map-action" onClick={()=>zoom("out")} aria-label="Zoom out"><Minus size={18}/></button>
           {canUseGoogleTiles && onPhotoRealisticChange && <button className="map-action" aria-label="Toggle 3D context" aria-pressed={photoRealistic} onClick={()=>onPhotoRealisticChange(!photoRealistic)}><Layers3 size={18}/></button>}
         </div>
-        {selectionMode!=="browse" && <div className="map-workspace__hint" role="status">{selectionMode==="polygon" ? `Tap corners on the map · ${vertices.length}/200 corners` : "Tap a location to select a square study area."}</div>}
+        {!mapError && selectionMode!=="browse" && <div className="map-workspace__hint" role="status">{selectionMode==="polygon" ? `Tap corners on the map · ${vertices.length}/200 corners` : "Tap a location to select a square study area."}</div>}
       </div>
       <div className="map-workspace__footer">
         {selectionMode==="polygon" ? <div className="map-workspace__draw-actions">
